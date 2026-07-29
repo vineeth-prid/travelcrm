@@ -59,11 +59,11 @@ export function ConversationView({ conversationId, onBack }: ConversationViewPro
 
   if (!conversationId) {
     return (
-      <div className="flex flex-1 items-center justify-center bg-background">
+      <div className="flex flex-1 items-center justify-center bg-background p-6">
         <EmptyState
           icon={<MessagesSquare aria-hidden />}
           title="Select a conversation"
-          description="Pick someone on the left to read the thread and reply."
+          description="Open one to read the thread and reply. Customer details, the AI assistant and quotes all appear beside it — this screen is the whole workspace."
         />
       </div>
     );
@@ -120,14 +120,16 @@ export function ConversationView({ conversationId, onBack }: ConversationViewPro
                 <Badge variant={STATUS_TONES[conversation.data.status]}>
                   {STATUS_LABELS[conversation.data.status]}
                 </Badge>
+                {/* Labelled, not icon-only: below lg this is the only route to
+                    the CRM, AI and quote controls, so it has to read as one. */}
                 <Button
-                  variant="ghost"
-                  size="icon"
-                  className="xl:hidden"
+                  variant="secondary"
+                  size="sm"
+                  className="lg:hidden"
                   onClick={() => setDetailsOpen(true)}
-                  aria-label="Open lead details"
                 >
                   <PanelRightOpen aria-hidden />
+                  Details
                 </Button>
               </div>
             </>
@@ -185,7 +187,8 @@ export function ConversationView({ conversationId, onBack }: ConversationViewPro
           reach them through a drawer, so the salesperson never navigates away. */}
       {conversation.data ? (
         <>
-          <aside className="hidden w-80 shrink-0 border-l border-border xl:block">
+          {/* Three columns from lg (1024px) up, which covers most laptops. */}
+          <aside className="hidden w-80 shrink-0 border-l border-border lg:block xl:w-96">
             <LeadPanel conversation={conversation.data} onReplyDrafted={acceptAiDraft} />
           </aside>
 
@@ -194,7 +197,7 @@ export function ConversationView({ conversationId, onBack }: ConversationViewPro
             onOpenChange={setDetailsOpen}
             title="Lead details"
             description={conversation.data.contact.name}
-            className="max-w-sm xl:hidden"
+            className="max-w-sm lg:hidden"
           >
             <div className="-m-6 h-full">
               <LeadPanel

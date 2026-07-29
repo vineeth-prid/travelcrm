@@ -61,8 +61,8 @@ export function ConversationList({
             title={search ? 'No matches' : 'No conversations yet'}
             description={
               search
-                ? 'No contact matches that name or phone number.'
-                : 'Messages from Instagram and WhatsApp will appear here as they arrive.'
+                ? 'No contact matches that name, phone, email or destination.'
+                : 'Messages from Instagram and WhatsApp arrive here automatically. Each one becomes a lead you can qualify, quote and reply to without leaving this screen.'
             }
           />
         ) : (
