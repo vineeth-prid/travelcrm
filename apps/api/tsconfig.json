@@ -11,6 +11,11 @@
     "rootDir": "./src",
     "baseUrl": "./",
     "incremental": true,
+    // Must live inside outDir. `nest build` deletes dist/ before compiling
+    // (deleteOutDir), and tsc trusts this cache without checking that the files
+    // it claims to have emitted still exist — so a cache outside dist/ makes
+    // every build after the first exit 0 having emitted nothing at all.
+    "tsBuildInfoFile": "./dist/tsconfig.tsbuildinfo",
     "strictBindCallApply": true,
     "strictPropertyInitialization": false,
     "noImplicitReturns": true

@@ -482,6 +482,21 @@ after they had typed their password. Only same-origin absolute paths are followe
 Both are covered by `npm run check -w @travel-crm/web`, and the HTTP behaviour of
 each mode was verified against a running production build.
 
+## Building the API
+
+`nest build` deletes `dist/` before compiling (`deleteOutDir`), and `tsc` trusts
+its incremental cache without checking that the files it recorded are still on
+disk. If the cache lives outside `dist/`, the two desynchronise: the second and
+every later build exits 0 having emitted nothing, and the failure only surfaces
+when the process manager reports `Script not found: dist/main.js`.
+
+`tsBuildInfoFile` therefore points inside `dist/`, so deleting the output
+deletes the cache with it. A `postbuild` step also asserts that `dist/main.js`
+exists and is non-empty, so a build that produces nothing fails at the build
+rather than at deploy time.
+
+Nothing needs clearing between builds — `npm run build` is repeatable as-is.
+
 ## Architecture notes
 
 - Feature-based modules on both sides; adding a module means adding a folder.

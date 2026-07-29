@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "build": "nest build",
+    "postbuild": "node scripts/verify-build.mjs",
     "dev": "nest start --watch",
     "start": "node dist/main.js",
     "lint": "eslint src --max-warnings 0",
