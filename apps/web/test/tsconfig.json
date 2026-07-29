@@ -1,0 +1,11 @@
+{
+  "//": "The app builds as ESM for the bundler; the self-checks run in plain Node.",
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "noEmit": true,
+    "plugins": []
+  },
+  "include": ["./**/*.ts", "../src/lib/redirects.ts"]
+}

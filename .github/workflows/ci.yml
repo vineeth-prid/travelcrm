@@ -49,7 +49,9 @@ jobs:
         run: npm run typecheck
 
       - name: Unit checks
-        run: npm run check -w @travel-crm/api
+        run: |
+          npm run check -w @travel-crm/api
+          npm run check -w @travel-crm/web
 
       - name: Apply migrations
         run: npm run db:deploy

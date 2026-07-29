@@ -10,6 +10,7 @@ import { useForm } from 'react-hook-form';
 
 import { api } from '@/lib/api';
 import { applyApiErrors } from '@/lib/form-errors';
+import { safeNextPath } from '@/lib/redirects';
 
 export function LoginForm() {
   const router = useRouter();
@@ -30,7 +31,9 @@ export function LoginForm() {
     mutationFn: (values: LoginRequest) => api.auth.login(values),
     onSuccess: () => {
       // The session cookie is set by the API; a refresh re-runs the middleware.
-      router.replace(searchParams.get('next') ?? '/dashboard');
+      // `next` comes from the query string, so it is sanitised before it is
+      // followed — otherwise a crafted link could bounce the user off-site.
+      router.replace(safeNextPath(searchParams.get('next')));
       router.refresh();
     },
     onError: (error) => setFormError(applyApiErrors(error, setError)),
