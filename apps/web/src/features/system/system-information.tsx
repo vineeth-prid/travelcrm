@@ -40,11 +40,6 @@ export function SystemInformation() {
         ) : (
           <dl>
             <Row label="Application" value={data.name} />
-            <Row label="Company (on quote PDFs)" value={data.companyName} />
-            <Row
-              label="Company logo"
-              value={data.companyLogoConfigured ? 'Configured' : 'Not configured'}
-            />
             <Row label="API version" value={data.apiVersion} />
             <Row label="API build" value={`${data.version} (${data.buildNumber})`} />
             <Row label="Environment" value={data.environment} />

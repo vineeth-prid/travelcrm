@@ -40,21 +40,14 @@ export function AppSidebar({ onNavigate, showBrand = true }: AppSidebarProps) {
         </p>
       }
     >
-      {navItems.map(({ label, href, icon: Icon, enabled }) =>
-        enabled ? (
-          <SidebarNavItem key={href} asChild active={pathname.startsWith(href)}>
-            <Link href={href} onClick={onNavigate}>
-              <Icon aria-hidden />
-              {label}
-            </Link>
-          </SidebarNavItem>
-        ) : (
-          <SidebarNavItem key={href} disabled hint="Soon">
+      {navItems.map(({ label, href, icon: Icon }) => (
+        <SidebarNavItem key={href} asChild active={pathname.startsWith(href)}>
+          <Link href={href} onClick={onNavigate}>
             <Icon aria-hidden />
             {label}
-          </SidebarNavItem>
-        ),
-      )}
+          </Link>
+        </SidebarNavItem>
+      ))}
     </Sidebar>
   );
 }

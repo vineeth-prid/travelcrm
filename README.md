@@ -366,7 +366,7 @@ the host the browser and WhatsApp will actually fetch. A signature is bound to
 its host, so one client cannot do both.
 
 Company identity comes from configuration — `COMPANY_NAME`, `COMPANY_LOGO_PATH`,
-`COMPANY_CONTACT` — and is shown read-only under **Settings → System
+`COMPANY_CONTACT` — and is shown read-only under **Settings → Company
 information**. A missing or unreadable logo is skipped rather than failing the
 render.
 
@@ -432,6 +432,55 @@ against a PostgreSQL service container.
 Husky + lint-staged format staged files on commit.
 
 ---
+
+## The workspace
+
+Three routes, and only one of them is where the work happens.
+
+| Route        | What it is                                        |
+| ------------ | ------------------------------------------------- |
+| `/dashboard` | A summary: service status, version, quick links   |
+| `/inbox`     | The workspace — everything below lives here       |
+| `/settings`  | Profile, password, company and system information |
+
+The Inbox is three columns on a wide screen:
+
+```
+conversations │ thread + composer │ customer · CRM · AI · quotes
+```
+
+The right column is the whole of the CRM and quoting experience: customer
+details, the lead form, the three AI actions and the quote history. Creating a
+quote opens a slide-over on top of it — full-screen on mobile — so a consultant
+never navigates away from the conversation they are answering.
+
+Below `xl` the right column moves behind a toggle in the conversation header,
+and below `sm` the list and thread swap places. There is no CRM page and no
+quotes page; those are not destinations.
+
+## Redirects behind a reverse proxy
+
+Next resolves a middleware `Location` header through `new URL()` and throws on a
+relative value, so every redirect must be absolute — which means something has to
+decide the host.
+
+`NEXT_PUBLIC_APP_URL` decides it. Set it to the public origin (`https://app.example.com`)
+in any proxied deployment and login redirects are built against that, fixed at
+deploy time. Left blank — the local default — the request's own address is used
+instead, and Next drops the origin on the way out because it matches.
+
+The host is deliberately **not** derived from `X-Forwarded-Host`. That header is
+client-settable and nginx forwards it unless explicitly overridden, so trusting it
+turns the login redirect into an open redirect: `X-Forwarded-Host: evil.com` on any
+protected path would return a `307` to a lookalike sign-in page. With a configured
+origin, spoofing `X-Forwarded-Host` _or_ `Host` changes nothing.
+
+The `?next=` parameter is sanitised separately, in `safeNextPath()`. Without it a
+crafted `/login?next=https://evil.com` would bounce a user off-site immediately
+after they had typed their password. Only same-origin absolute paths are followed.
+
+Both are covered by `npm run check -w @travel-crm/web`, and the HTTP behaviour of
+each mode was verified against a running production build.
 
 ## Architecture notes
 

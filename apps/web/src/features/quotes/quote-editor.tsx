@@ -10,9 +10,9 @@ import {
 } from '@travel-crm/sdk';
 import {
   Button,
+  Drawer,
   FormField,
   Input,
-  Modal,
   Select,
   SelectContent,
   SelectItem,
@@ -126,10 +126,13 @@ export function QuoteEditor({
   const saving = create.isPending || update.isPending;
 
   return (
-    <Modal
+    // A slide-over rather than a dialog: full-screen on mobile, a side panel on
+    // desktop, so the conversation stays visible while the quote is written.
+    <Drawer
       open={open}
       onOpenChange={onOpenChange}
-      size="lg"
+      side="right"
+      className="max-w-none sm:max-w-2xl"
       title={
         editingDraft ? `Edit quote v${quote.version}` : asNewVersion ? 'New version' : 'New quote'
       }
@@ -137,6 +140,17 @@ export function QuoteEditor({
         asNewVersion
           ? 'Sent quotes cannot be changed. This creates the next version from a copy.'
           : undefined
+      }
+      footer={
+        <>
+          <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          {/* Outside the <form>, so it submits by id. */}
+          <Button type="submit" form="quote-form" loading={saving}>
+            {editingDraft ? 'Save quote' : 'Create quote'}
+          </Button>
+        </>
       }
     >
       <form
@@ -317,16 +331,7 @@ export function QuoteEditor({
             {...register('notes')}
           />
         </FormField>
-
-        <div className="flex items-center justify-end gap-3 border-t border-border pt-4">
-          <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button type="submit" loading={saving}>
-            {editingDraft ? 'Save quote' : 'Create quote'}
-          </Button>
-        </div>
       </form>
-    </Modal>
+    </Drawer>
   );
 }
