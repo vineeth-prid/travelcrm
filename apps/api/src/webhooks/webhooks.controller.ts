@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Header,
+  Headers,
   HttpCode,
   HttpStatus,
   Post,
@@ -36,12 +37,22 @@ export class WebhooksController {
     return this.webhooks.verifySubscription('instagram', query);
   }
 
+  /**
+   * Signature first, then acknowledge, then work. Meta wants the 200 inside
+   * about five seconds and quietly disables a subscription that keeps missing
+   * it, so nothing that touches the database or the Graph API runs before the
+   * response goes out.
+   */
   @Post('instagram')
   @UseGuards(WebhookSignatureGuard)
   @HttpCode(HttpStatus.OK)
   @ApiExcludeEndpoint()
-  async receiveInstagram(@Body() payload: unknown): Promise<{ received: true }> {
-    await this.webhooks.handleInstagram(payload);
+  receiveInstagram(
+    @Body() payload: unknown,
+    @Headers('x-hub-signature-256') signature?: string,
+  ): { received: true } {
+    this.webhooks.logDelivery('instagram', signature, payload);
+    this.webhooks.accept('instagram', payload);
     return { received: true };
   }
 
@@ -56,8 +67,12 @@ export class WebhooksController {
   @UseGuards(WebhookSignatureGuard)
   @HttpCode(HttpStatus.OK)
   @ApiExcludeEndpoint()
-  async receiveWhatsApp(@Body() payload: unknown): Promise<{ received: true }> {
-    await this.webhooks.handleWhatsApp(payload);
+  receiveWhatsApp(
+    @Body() payload: unknown,
+    @Headers('x-hub-signature-256') signature?: string,
+  ): { received: true } {
+    this.webhooks.logDelivery('whatsapp', signature, payload);
+    this.webhooks.accept('whatsapp', payload);
     return { received: true };
   }
 }

@@ -30,8 +30,26 @@ export const envSchema = z.object({
   /** Used to verify the X-Hub-Signature-256 header on every webhook. */
   META_APP_SECRET: z.string().default(''),
 
+  /**
+   * Logs the full body of every webhook Meta delivers. Off by default: those
+   * payloads carry customer names, phone numbers and message text, which has no
+   * business sitting in a log file permanently. Turn on to diagnose a channel,
+   * then turn off.
+   */
+  WEBHOOK_LOG_PAYLOADS: booleanish.default(false),
+
+  // --- Instagram (API with Instagram Login) ---------------------------------
+  // A different API from the Facebook Page / Messenger flow: its own host, its
+  // own token, no Page and no Page Access Token anywhere.
+  /** Host + version for every Instagram call. Never graph.facebook.com. */
+  INSTAGRAM_GRAPH_URL: z.string().url().default('https://graph.instagram.com'),
+  INSTAGRAM_GRAPH_VERSION: z.string().default('v23.0'),
   INSTAGRAM_VERIFY_TOKEN: z.string().default(''),
-  INSTAGRAM_ACCOUNT_ID: z.string().default(''),
+  /** Instagram app secret, used to verify X-Hub-Signature-256 on IG webhooks. */
+  INSTAGRAM_APP_SECRET: z.string().default(''),
+  /** The Instagram professional account that owns the inbox. */
+  INSTAGRAM_BUSINESS_ID: z.string().default(''),
+  /** Instagram *user* access token. Cold-start value; refreshes are stored. */
   INSTAGRAM_ACCESS_TOKEN: z.string().default(''),
 
   WHATSAPP_VERIFY_TOKEN: z.string().default(''),

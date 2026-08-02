@@ -53,11 +53,31 @@ export type MessageType = 'TEXT' | 'LEAD';
 /** Channels a salesperson can reply on. Lead ads are inbound-only. */
 export const REPLYABLE_CHANNELS: readonly Channel[] = ['INSTAGRAM', 'WHATSAPP'];
 
+/**
+ * How long after the customer's last message a free-form reply is allowed.
+ * Instagram and WhatsApp both use 24 hours.
+ */
+export const REPLY_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/** Milliseconds of reply window left, or null when the channel has no window. */
+export function replyWindowRemainingMs(conversation: {
+  channel: Channel;
+  lastInboundAt: string | null;
+}): number | null {
+  if (!REPLYABLE_CHANNELS.includes(conversation.channel)) return null;
+  if (!conversation.lastInboundAt) return 0;
+
+  const elapsed = Date.now() - new Date(conversation.lastInboundAt).getTime();
+  return Math.max(0, REPLY_WINDOW_MS - elapsed);
+}
+
 export interface Contact {
   id: string;
   channel: Channel;
   externalId: string;
   name: string;
+  /** Instagram handle, when the profile lookup returned one. */
+  username: string | null;
   phone: string | null;
   email: string | null;
   profilePicture: string | null;
@@ -71,6 +91,11 @@ export interface Conversation {
   channel: Channel;
   lastMessage: string | null;
   lastMessageAt: string | null;
+  /**
+   * When the customer last wrote in. Instagram and WhatsApp only allow a
+   * free-form reply for 24 hours after this; see REPLY_WINDOW_MS.
+   */
+  lastInboundAt: string | null;
   unreadCount: number;
   contact: Contact;
 

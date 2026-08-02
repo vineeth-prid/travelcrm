@@ -14,6 +14,7 @@ export interface UpsertContactInput {
   channel: Channel;
   externalId: string;
   name: string;
+  username?: string | null;
   phone?: string | null;
   profilePicture?: string | null;
 }
@@ -84,6 +85,7 @@ export class ConversationsRepository {
       // Only fill in details we learn later; never blank out what we already have.
       update: {
         name: input.name,
+        ...(input.username ? { username: input.username } : {}),
         ...(input.phone ? { phone: input.phone } : {}),
         ...(input.profilePicture ? { profilePicture: input.profilePicture } : {}),
       },
@@ -91,6 +93,7 @@ export class ConversationsRepository {
         channel: input.channel,
         externalId: input.externalId,
         name: input.name,
+        username: input.username ?? null,
         phone: input.phone ?? null,
         profilePicture: input.profilePicture ?? null,
       },
@@ -126,6 +129,9 @@ export class ConversationsRepository {
           data: {
             lastMessage: input.content,
             lastMessageAt: input.sentAt,
+            // Starts the 24-hour window in which the provider allows a
+            // free-form reply, so the inbox can warn before a send fails.
+            ...(input.direction === 'INCOMING' ? { lastInboundAt: input.sentAt } : {}),
             ...(options.incrementUnread ? { unreadCount: { increment: 1 } } : {}),
           },
         });
@@ -139,6 +145,14 @@ export class ConversationsRepository {
       }
       throw error;
     }
+  }
+
+  async contactExists(channel: Channel, externalId: string): Promise<boolean> {
+    const found = await this.prisma.contact.findUnique({
+      where: { channel_externalId: { channel, externalId } },
+      select: { id: true },
+    });
+    return found !== null;
   }
 
   async messageExists(externalMessageId: string): Promise<boolean> {

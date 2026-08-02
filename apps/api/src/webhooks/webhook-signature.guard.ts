@@ -24,8 +24,8 @@ export class WebhookSignatureGuard implements CanActivate {
   constructor(private readonly config: ConfigService<Env, true>) {}
 
   canActivate(context: ExecutionContext): boolean {
-    const secret = this.config.get('META_APP_SECRET', { infer: true });
     const request = context.switchToHttp().getRequest<Request & { rawBody?: Buffer }>();
+    const secret = this.secretFor(request.path);
 
     if (!secret) {
       // Refusing outright in production beats silently trusting the caller.
@@ -45,6 +45,11 @@ export class WebhookSignatureGuard implements CanActivate {
 
     const body = request.rawBody;
     if (!body) {
+      // Signatures cover the unparsed bytes, so without them there is nothing
+      // to check. Never fall through to accepting the request.
+      this.logger.error(
+        'No raw request body available — NestFactory.create needs { rawBody: true }.',
+      );
       throw new UnauthorizedException('Webhook body could not be verified.');
     }
 
@@ -60,5 +65,19 @@ export class WebhookSignatureGuard implements CanActivate {
     }
 
     return true;
+  }
+
+  /**
+   * Instagram Login apps are their own app with their own secret. Falls back to
+   * META_APP_SECRET so a single-app setup keeps working unchanged.
+   */
+  private secretFor(path: string): string {
+    if (path.endsWith('/instagram')) {
+      return (
+        this.config.get('INSTAGRAM_APP_SECRET', { infer: true }) ||
+        this.config.get('META_APP_SECRET', { infer: true })
+      );
+    }
+    return this.config.get('META_APP_SECRET', { infer: true });
   }
 }

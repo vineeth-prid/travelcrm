@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 
 import { AiModule } from './ai/ai.module';
@@ -27,6 +28,8 @@ import { UsersModule } from './users/users.module';
       envFilePath: ['.env', '../../.env.local', '../../.env'],
     }),
     ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 120 }]),
+    // Drives the weekly Instagram access token refresh.
+    ScheduleModule.forRoot(),
     SharedModule,
     AuthModule,
     UsersModule,

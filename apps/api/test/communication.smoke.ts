@@ -83,6 +83,12 @@ async function main(): Promise<void> {
           sent.push({ channel: 'INSTAGRAM', to, content });
           return Promise.resolve(`ig-out-${++outgoingCounter}`);
         },
+        fetchProfile: () =>
+          Promise.resolve({
+            name: 'Meera Iyer',
+            username: 'meera.travels',
+            profilePicture: 'https://cdn.example/meera.jpg',
+          }),
         fetchLead: (leadgenId: string) =>
           Promise.resolve({
             leadgenId,
@@ -106,6 +112,20 @@ async function main(): Promise<void> {
   );
 
   const http = app.getHttpServer() as Parameters<typeof request>[0];
+
+  // Webhooks are acknowledged before they are processed, so Meta always gets
+  // its 200 in time. Assertions have to wait for the work that follows.
+  const { WebhooksService } = await import('../src/webhooks/webhooks.service');
+  const webhooks = app.get(WebhooksService);
+  const deliver = async (channel: 'whatsapp' | 'instagram', body: string) => {
+    await request(http)
+      .post(`${base}/webhooks/${channel}`)
+      .set('Content-Type', 'application/json')
+      .set('X-Hub-Signature-256', sign(body))
+      .send(body)
+      .expect(200);
+    await webhooks.settled;
+  };
 
   // --- inbox requires authentication ---------------------------------------
   await request(http).get(`${base}/conversations`).expect(401);
@@ -154,12 +174,7 @@ async function main(): Promise<void> {
   assert.equal(prisma.messages.length, 0, 'unsigned webhooks must not be stored');
 
   // --- WhatsApp ingestion ---------------------------------------------------
-  await request(http)
-    .post(`${base}/webhooks/whatsapp`)
-    .set('Content-Type', 'application/json')
-    .set('X-Hub-Signature-256', sign(firstBody))
-    .send(firstBody)
-    .expect(200);
+  await deliver('whatsapp', firstBody);
 
   let list = (await request(http).get(`${base}/conversations`).set('Cookie', cookie).expect(200))
     .body;
@@ -173,12 +188,7 @@ async function main(): Promise<void> {
   const whatsappConversationId: string = list[0].id;
 
   // --- redelivery of the same message is a no-op ---------------------------
-  await request(http)
-    .post(`${base}/webhooks/whatsapp`)
-    .set('Content-Type', 'application/json')
-    .set('X-Hub-Signature-256', sign(firstBody))
-    .send(firstBody)
-    .expect(200);
+  await deliver('whatsapp', firstBody);
   assert.equal(prisma.messages.length, 1, 'duplicate provider message ids must be ignored');
 
   // --- non-text messages are ignored ---------------------------------------
@@ -200,22 +210,12 @@ async function main(): Promise<void> {
       },
     ],
   });
-  await request(http)
-    .post(`${base}/webhooks/whatsapp`)
-    .set('Content-Type', 'application/json')
-    .set('X-Hub-Signature-256', sign(imageBody))
-    .send(imageBody)
-    .expect(200);
+  await deliver('whatsapp', imageBody);
   assert.equal(prisma.messages.length, 1, 'attachments are out of scope and must be skipped');
 
   // --- malformed payloads are acknowledged, not retried --------------------
   const junkBody = JSON.stringify({ object: 'whatsapp_business_account', entry: 'not-an-array' });
-  await request(http)
-    .post(`${base}/webhooks/whatsapp`)
-    .set('Content-Type', 'application/json')
-    .set('X-Hub-Signature-256', sign(junkBody))
-    .send(junkBody)
-    .expect(200);
+  await deliver('whatsapp', junkBody);
 
   // --- Instagram DM ingestion ----------------------------------------------
   const igBody = JSON.stringify({
@@ -241,14 +241,15 @@ async function main(): Promise<void> {
       },
     ],
   });
-  await request(http)
-    .post(`${base}/webhooks/instagram`)
-    .set('Content-Type', 'application/json')
-    .set('X-Hub-Signature-256', sign(igBody))
-    .send(igBody)
-    .expect(200);
+  await deliver('instagram', igBody);
 
   assert.equal(prisma.messages.length, 2, 'echoes of our own messages must not be stored');
+
+  // The webhook carries only an IGSID; the profile lookup names the contact.
+  const igContact = prisma.contacts.find((row) => row.externalId === 'igsid_998877');
+  assert.equal(igContact?.name, 'Meera Iyer');
+  assert.equal(igContact?.username, 'meera.travels');
+  assert.equal(igContact?.profilePicture, 'https://cdn.example/meera.jpg');
 
   // --- Instagram lead ad ----------------------------------------------------
   const leadBody = JSON.stringify({
@@ -265,12 +266,7 @@ async function main(): Promise<void> {
       },
     ],
   });
-  await request(http)
-    .post(`${base}/webhooks/instagram`)
-    .set('Content-Type', 'application/json')
-    .set('X-Hub-Signature-256', sign(leadBody))
-    .send(leadBody)
-    .expect(200);
+  await deliver('instagram', leadBody);
 
   list = (await request(http).get(`${base}/conversations`).set('Cookie', cookie).expect(200)).body;
   assert.equal(list.length, 3, 'DM, lead ad and WhatsApp each get a conversation');
@@ -374,12 +370,7 @@ async function main(): Promise<void> {
       },
     ],
   });
-  await request(http)
-    .post(`${base}/webhooks/whatsapp`)
-    .set('Content-Type', 'application/json')
-    .set('X-Hub-Signature-256', sign(statusBody))
-    .send(statusBody)
-    .expect(200);
+  await deliver('whatsapp', statusBody);
 
   const delivered = prisma.messages.find((row) => row.externalMessageId === 'wamid.out-1');
   assert.ok(delivered?.deliveredAt, 'delivery receipts must be recorded');
@@ -552,12 +543,7 @@ async function main(): Promise<void> {
 
   // A new inbound message must reach a connected client without polling.
   const liveBody = JSON.stringify(whatsappMessage('wamid.live', 'Any update?'));
-  await request(http)
-    .post(`${base}/webhooks/whatsapp`)
-    .set('Content-Type', 'application/json')
-    .set('X-Hub-Signature-256', sign(liveBody))
-    .send(liveBody)
-    .expect(200);
+  await deliver('whatsapp', liveBody);
 
   let received = '';
   while (!received.includes('wamid.live')) {

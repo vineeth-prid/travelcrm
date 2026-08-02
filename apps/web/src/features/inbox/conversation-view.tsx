@@ -112,6 +112,9 @@ export function ConversationView({ conversationId, onBack }: ConversationViewPro
                 <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <ChannelIcon channel={conversation.data.channel} />
                   {CHANNEL_LABELS[conversation.data.channel]}
+                  {conversation.data.contact.username
+                    ? ` · @${conversation.data.contact.username}`
+                    : ''}
                   {conversation.data.contact.phone ? ` · ${conversation.data.contact.phone}` : ''}
                 </p>
               </div>
@@ -177,6 +180,7 @@ export function ConversationView({ conversationId, onBack }: ConversationViewPro
           <Composer
             conversationId={conversation.data.id}
             channel={conversation.data.channel}
+            lastInboundAt={conversation.data.lastInboundAt}
             content={draft}
             onContentChange={setDraft}
           />

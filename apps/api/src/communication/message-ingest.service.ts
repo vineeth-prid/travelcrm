@@ -11,6 +11,8 @@ export interface IncomingMessage {
   /** Provider-side id of the person: IG-scoped user id, or WhatsApp wa_id. */
   contactExternalId: string;
   contactName: string;
+  /** Instagram handle, when a profile lookup gave us one. */
+  contactUsername?: string | null;
   contactPhone?: string | null;
   contactProfilePicture?: string | null;
   externalMessageId: string;
@@ -37,6 +39,7 @@ export class MessageIngestService {
       channel: input.channel,
       externalId: input.contactExternalId,
       name: input.contactName,
+      username: input.contactUsername,
       phone: input.contactPhone,
       profilePicture: input.contactProfilePicture,
     });
@@ -63,6 +66,14 @@ export class MessageIngestService {
     if (updated) {
       this.events.conversationChanged(toConversation(updated));
     }
+  }
+
+  /**
+   * Whether this person has written to us before. Callers use it to decide
+   * whether a provider profile lookup is worth an HTTP round trip.
+   */
+  knowsContact(channel: Channel, externalId: string): Promise<boolean> {
+    return this.repository.contactExists(channel, externalId);
   }
 
   /** Records a delivery receipt for an outgoing message. */

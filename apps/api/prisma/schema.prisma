@@ -48,12 +48,25 @@ enum LeadStatus {
   LOST
 }
 
+/// Provider access tokens that the app rotates by itself. The environment
+/// variable is only the cold-start value; once refreshed, this row wins.
+model IntegrationToken {
+  provider    String    @id
+  accessToken String
+  expiresAt   DateTime?
+  updatedAt   DateTime  @updatedAt
+
+  @@map("integration_tokens")
+}
+
 model Contact {
   id             String   @id @default(uuid())
   channel        Channel
   /// Provider-side identifier: Instagram-scoped user id, or WhatsApp wa_id.
   externalId     String
   name           String
+  /// Instagram handle, when the profile lookup gives us one.
+  username       String?
   phone          String?
   email          String?
   profilePicture String?
@@ -75,6 +88,9 @@ model Conversation {
   channel       Channel
   lastMessage   String?
   lastMessageAt DateTime?
+  /// When the customer last wrote in. Instagram and WhatsApp both only allow
+  /// free-form replies for 24 hours after this, so the inbox shows it.
+  lastInboundAt DateTime?
   unreadCount   Int       @default(0)
 
   // Lead details. Every conversation is a lead, so these live here rather than

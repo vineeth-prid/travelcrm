@@ -105,7 +105,11 @@ export class ConversationsService {
         break;
       case 'INSTAGRAM':
         content = `${document.caption}\n${document.url}`;
-        externalMessageId = await this.instagram.sendText(recipient, content);
+        externalMessageId = await this.instagram.sendText(
+          recipient,
+          content,
+          conversation.lastInboundAt,
+        );
         break;
       case 'INSTAGRAM_LEAD':
         throw new BadRequestException(
@@ -150,7 +154,11 @@ export class ConversationsService {
   ): Promise<string | null> {
     switch (conversation.channel) {
       case 'INSTAGRAM':
-        return this.instagram.sendText(conversation.contact.externalId, content);
+        return this.instagram.sendText(
+          conversation.contact.externalId,
+          content,
+          conversation.lastInboundAt,
+        );
       case 'WHATSAPP':
         return this.whatsapp.sendText(conversation.contact.externalId, content);
       case 'INSTAGRAM_LEAD':

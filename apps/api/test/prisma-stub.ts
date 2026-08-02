@@ -21,6 +21,7 @@ export interface ContactRow {
   channel: string;
   externalId: string;
   name: string;
+  username: string | null;
   phone: string | null;
   email: string | null;
   profilePicture: string | null;
@@ -34,6 +35,7 @@ export interface ConversationRow {
   channel: string;
   lastMessage: string | null;
   lastMessageAt: Date | null;
+  lastInboundAt: Date | null;
   unreadCount: number;
   destination: string | null;
   travelMonth: string | null;
@@ -99,6 +101,13 @@ export interface QuoteItemRow {
   sortOrder: number;
 }
 
+export interface IntegrationTokenRow {
+  provider: string;
+  accessToken: string;
+  expiresAt: Date | null;
+  updatedAt: Date;
+}
+
 class UniqueViolation extends Error {
   readonly code = 'P2002';
 }
@@ -119,6 +128,7 @@ export function createPrismaStub() {
   const messages: MessageRow[] = [];
   const quotes: QuoteRow[] = [];
   const quoteItems: QuoteItemRow[] = [];
+  const integrationTokens: IntegrationTokenRow[] = [];
 
   const findUser = (where: { id?: string; email?: string }): UserRow | null =>
     users.find((row) => (where.id ? row.id === where.id : row.email === where.email)) ?? null;
@@ -135,6 +145,7 @@ export function createPrismaStub() {
     messages,
     quotes,
     quoteItems,
+    integrationTokens,
 
     $connect: () => Promise.resolve(),
     $disconnect: () => Promise.resolve(),
@@ -155,6 +166,19 @@ export function createPrismaStub() {
     },
 
     contact: {
+      findUnique: ({
+        where,
+      }: {
+        where: { channel_externalId: { channel: string; externalId: string } };
+      }) => {
+        const key = where.channel_externalId;
+        return Promise.resolve(
+          contacts.find(
+            (row) => row.channel === key.channel && row.externalId === key.externalId,
+          ) ?? null,
+        );
+      },
+
       upsert: ({
         where,
         update,
@@ -176,6 +200,7 @@ export function createPrismaStub() {
 
         const row: ContactRow = {
           id: randomUUID(),
+          username: null,
           phone: null,
           email: null,
           profilePicture: null,
@@ -253,6 +278,7 @@ export function createPrismaStub() {
           channel: create.channel,
           lastMessage: null,
           lastMessageAt: null,
+          lastInboundAt: null,
           unreadCount: 0,
           destination: null,
           travelMonth: null,
@@ -419,6 +445,31 @@ export function createPrismaStub() {
 
         row.updatedAt = new Date();
         return Promise.resolve(withQuoteItems(row));
+      },
+    },
+
+    integrationToken: {
+      findUnique: ({ where }: { where: { provider: string } }) =>
+        Promise.resolve(integrationTokens.find((row) => row.provider === where.provider) ?? null),
+
+      upsert: ({
+        where,
+        update,
+        create,
+      }: {
+        where: { provider: string };
+        update: Partial<IntegrationTokenRow>;
+        create: Omit<IntegrationTokenRow, 'updatedAt'>;
+      }) => {
+        const existing = integrationTokens.find((row) => row.provider === where.provider);
+        if (existing) {
+          Object.assign(existing, update, { updatedAt: new Date() });
+          return Promise.resolve(existing);
+        }
+
+        const row: IntegrationTokenRow = { ...create, updatedAt: new Date() };
+        integrationTokens.push(row);
+        return Promise.resolve(row);
       },
     },
 

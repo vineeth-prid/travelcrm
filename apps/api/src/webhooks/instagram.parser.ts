@@ -6,29 +6,61 @@ export interface LeadNotification {
   createdAt: Date;
 }
 
+/** Events we recognise but do not store yet, reported by the caller. */
+export interface IgnoredEvent {
+  kind: 'postback' | 'reaction';
+  senderId: string | null;
+}
+
+export interface InstagramEvents {
+  messages: IncomingMessage[];
+  ignored: IgnoredEvent[];
+}
+
 /**
- * Extracts direct messages from an Instagram webhook.
+ * Extracts direct messages from an Instagram webhook (`object: "instagram"`,
+ * events under `entry[].messaging[]`).
  *
- * Skipped on purpose: echoes of our own replies, deletions, and anything
- * without a text body (images, audio, stickers, reactions) — out of scope.
+ * Skipped on purpose: echoes of our own replies — Instagram delivers those back
+ * to us, and storing them duplicates every message the CRM sends — and
+ * deletions.
  */
-export function parseInstagramMessages(payload: unknown): IncomingMessage[] {
+export function parseInstagramEvents(payload: unknown): InstagramEvents {
   const messages: IncomingMessage[] = [];
+  const ignored: IgnoredEvent[] = [];
+
+  // A Facebook Page / Messenger payload would parse almost identically and
+  // produce contacts keyed by the wrong kind of id. Only Instagram belongs here.
+  if (asString(readPath(payload, 'object')) !== 'instagram') {
+    return { messages, ignored };
+  }
 
   for (const entry of asArray(readPath(payload, 'entry'))) {
     for (const event of asArray(readPath(entry, 'messaging'))) {
+      // `sender.id` is the IGSID: stable for this person on this app, which is
+      // what makes it usable as the contact's external id.
+      const senderId = asString(readPath(event, 'sender', 'id'));
+
+      if (readPath(event, 'postback') !== undefined) {
+        ignored.push({ kind: 'postback', senderId });
+        continue;
+      }
+      if (readPath(event, 'reaction') !== undefined) {
+        ignored.push({ kind: 'reaction', senderId });
+        continue;
+      }
+
       const message = asRecord(readPath(event, 'message'));
       if (!message || message.is_echo === true || message.is_deleted === true) continue;
 
       const externalMessageId = asString(message.mid);
-      const content = asString(message.text);
-      const senderId = asString(readPath(event, 'sender', 'id'));
+      const content = asString(message.text) ?? describeAttachments(message.attachments);
       if (!externalMessageId || !content || !senderId) continue;
 
       messages.push({
         channel: 'INSTAGRAM',
         contactExternalId: senderId,
-        // Instagram does not include the display name on the messaging webhook.
+        // Replaced with the real profile name once we look the IGSID up.
         contactName: `Instagram ${senderId.slice(-6)}`,
         externalMessageId,
         content,
@@ -38,7 +70,27 @@ export function parseInstagramMessages(payload: unknown): IncomingMessage[] {
     }
   }
 
-  return messages;
+  return { messages, ignored };
+}
+
+/**
+ * Renders attachments as text so an image or voice note still reaches the
+ * inbox with its link intact.
+ *
+ * ponytail: attachments are stored as a text line, not as typed media. Add an
+ * IMAGE/VIDEO/AUDIO MessageType and inline rendering when the inbox needs to
+ * show thumbnails rather than links.
+ */
+function describeAttachments(value: unknown): string | null {
+  const lines = asArray(value)
+    .map((attachment) => {
+      const type = asString(readPath(attachment, 'type')) ?? 'file';
+      const url = asString(readPath(attachment, 'payload', 'url'));
+      return url ? `[${type}] ${url}` : `[${type}]`;
+    })
+    .filter(Boolean);
+
+  return lines.length ? lines.join('\n') : null;
 }
 
 /** Extracts Lead Ads notifications. The answers require a follow-up API call. */
