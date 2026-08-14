@@ -1,4 +1,4 @@
-import type { ChatMessage, CompletionRequest } from '../openai.client';
+import type { ChatMessage, CompletionRequest } from '../chat.client';
 
 const SYSTEM: ChatMessage = {
   role: 'system',

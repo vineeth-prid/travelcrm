@@ -47,7 +47,9 @@ export class AuthService {
       ? await this.users.verifyPassword(dto.password, record.password)
       : false;
 
-    if (!record || !passwordMatches) {
+    // A deactivated account is rejected with the same message, for the same
+    // reason: the endpoint must not reveal which accounts exist.
+    if (!record || !passwordMatches || !record.active) {
       this.logger.warn(`Failed login attempt for ${dto.email}`);
       throw new UnauthorizedException('Invalid email or password');
     }

@@ -3,11 +3,11 @@ import { Module } from '@nestjs/common';
 import { CommunicationModule } from '../communication/communication.module';
 import { AiController } from './ai.controller';
 import { AiService } from './ai.service';
-import { OpenAiClient } from './openai.client';
+import { ChatClient } from './chat.client';
 
 @Module({
   imports: [CommunicationModule],
   controllers: [AiController],
-  providers: [AiService, OpenAiClient],
+  providers: [AiService, ChatClient],
 })
 export class AiModule {}

@@ -1,17 +1,94 @@
-import { Inbox, LayoutDashboard, Settings, type LucideIcon } from 'lucide-react';
+import {
+  BarChart3,
+  CalendarClock,
+  CreditCard,
+  FileText,
+  Inbox,
+  Instagram,
+  LayoutDashboard,
+  MessageCircle,
+  Receipt,
+  Settings,
+  Sparkles,
+  Users,
+  UserSquare2,
+  Wallet,
+  type LucideIcon,
+} from 'lucide-react';
 
 export interface NavItem {
   label: string;
   href: string;
   icon: LucideIcon;
+  /** Hidden from employees entirely — the API enforces the same rule. */
+  adminOnly?: boolean;
+  /**
+   * Shown, disabled, badged "Soon". Nothing sits behind these routes: a nav
+   * entry that 404s is worse than one that says it is not built yet.
+   */
+  soon?: boolean;
 }
 
-/**
- * The whole application. CRM and quoting are not destinations — they live in
- * the right-hand panel of the Inbox, beside the conversation they belong to.
- */
-export const navItems: NavItem[] = [
-  { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { label: 'Inbox', href: '/inbox', icon: Inbox },
-  { label: 'Settings', href: '/settings', icon: Settings },
+export interface NavSection {
+  /** Omitted for the first group, which needs no heading. */
+  label?: string;
+  items: NavItem[];
+}
+
+export const navSections: NavSection[] = [
+  {
+    items: [{ label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard }],
+  },
+  {
+    label: 'CRM',
+    items: [
+      { label: 'Leads', href: '/leads', icon: Users },
+      { label: 'Customers', href: '/customers', icon: UserSquare2, soon: true },
+      { label: 'Follow-ups', href: '/follow-ups', icon: CalendarClock },
+      { label: 'Inbox', href: '/inbox', icon: Inbox },
+    ],
+  },
+  {
+    label: 'Sales',
+    items: [
+      // Proposals live on their lead; there is no useful list of them yet, so
+      // the entry stays hidden rather than pointing at an empty page.
+      { label: 'Proposals', href: '/proposals', icon: FileText, soon: true },
+      { label: 'Invoices', href: '/invoices', icon: Receipt },
+      { label: 'Payments', href: '/payments', icon: CreditCard, soon: true },
+    ],
+  },
+  {
+    label: 'Finance',
+    items: [{ label: 'Expenses', href: '/expenses', icon: Wallet, adminOnly: true }],
+  },
+  {
+    label: 'Reports',
+    items: [
+      // Sales and profitability are the Dashboard rather than two more pages
+      // rendering slices of the same payload. Performance is genuinely its own
+      // view, and is open to employees — the API gives them only their own row.
+      { label: 'Performance', href: '/reports/performance', icon: BarChart3 },
+    ],
+  },
+  {
+    label: 'Coming soon',
+    items: [
+      { label: 'Instagram', href: '/channels/instagram', icon: Instagram, soon: true },
+      { label: 'WhatsApp', href: '/channels/whatsapp', icon: MessageCircle, soon: true },
+      { label: 'AI automation', href: '/automation', icon: Sparkles, soon: true },
+    ],
+  },
+  {
+    items: [{ label: 'Settings', href: '/settings', icon: Settings }],
+  },
 ];
+
+/** Drops the sections an employee may not see, and any section left empty. */
+export function visibleSections(isAdmin: boolean): NavSection[] {
+  if (isAdmin) return navSections;
+
+  return navSections
+    .map((section) => ({ ...section, items: section.items.filter((item) => !item.adminOnly) }))
+    .filter((section) => section.items.length > 0);
+}

@@ -20,7 +20,6 @@ export async function bootApp(
 ): Promise<BootedApp> {
   const { AppModule } = await import('../src/app.module');
   const { PrismaService } = await import('../src/shared/prisma.service');
-  const { AllExceptionsFilter } = await import('../src/shared/all-exceptions.filter');
 
   const prisma = createPrismaStub();
 
@@ -39,7 +38,8 @@ export async function bootApp(
   app.use(cookieParser());
   app.setGlobalPrefix('api');
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
-  app.useGlobalFilters(new AllExceptionsFilter());
+  // The exception filter comes from AppModule via APP_FILTER, exactly as in
+  // production — registering it here too would double every audit entry.
   await app.init();
 
   return { app, prisma, base: '/api/v1' };

@@ -1,10 +1,18 @@
 'use client';
 
-import { Card, CardContent, CardHeader, CardTitle, EmptyState, Skeleton } from '@travel-crm/ui';
+import {
+  Badge,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  EmptyState,
+  Skeleton,
+} from '@travel-crm/ui';
 import { ServerCrash } from 'lucide-react';
 
 import { publicEnv } from '@/lib/env';
-import { useAppInfo } from './use-system';
+import { useAppInfo, useHealth } from './use-system';
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
@@ -17,11 +25,23 @@ function Row({ label, value }: { label: string; value: string }) {
 
 export function SystemInformation() {
   const { data, isPending, isError } = useAppInfo();
+  // Polled, unlike the rest of this card: it is the one line that answers
+  // "is it me or is it broken" when somebody reports a save that failed.
+  const health = useHealth();
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>System information</CardTitle>
+        <CardTitle className="flex items-center justify-between gap-3">
+          System information
+          {health.isPending ? (
+            <Badge variant="neutral">Checking…</Badge>
+          ) : health.data?.services.database === 'up' ? (
+            <Badge variant="success">Database up</Badge>
+          ) : (
+            <Badge variant="danger">Database unreachable</Badge>
+          )}
+        </CardTitle>
       </CardHeader>
       <CardContent>
         {isPending ? (

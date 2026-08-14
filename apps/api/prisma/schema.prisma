@@ -7,13 +7,44 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+/// Two roles is the whole model. ADMIN sees the company; EMPLOYEE sees their
+/// own work. Anything finer belongs in a permission table, which nothing has
+/// asked for yet.
+enum Role {
+  ADMIN
+  EMPLOYEE
+}
+
 model User {
-  id        String   @id @default(uuid())
-  name      String
-  email     String   @unique
-  password  String
+  id       String  @id @default(uuid())
+  name     String
+  email    String  @unique
+  password String
+  role     Role    @default(EMPLOYEE)
+  /// Deactivated staff keep their history but cannot sign in.
+  active   Boolean @default(true)
+
+  /// Whether this employee may see cost and margin on their own proposals.
+  /// Company-wide profitability stays ADMIN-only regardless of this flag.
+  canViewOwnProfitability Boolean @default(false)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  assignedLeads      Lead[]            @relation("LeadAssignee")
+  createdLeads       Lead[]            @relation("LeadCreator")
+  activities         LeadActivity[]
+  createdProposals   Proposal[]        @relation("ProposalCreator")
+  assignedFollowUps  FollowUp[]        @relation("FollowUpAssignee")
+  completedFollowUps FollowUp[]        @relation("FollowUpCompleter")
+  notifications      Notification[]
+  createdInvoices    Invoice[]
+  recordedPayments   Payment[]
+  paidExpenses       Expense[]         @relation("ExpensePayer")
+  createdExpenses    Expense[]         @relation("ExpenseCreator")
+  auditLogs          AuditLog[]
+  submittedProposals Proposal[]        @relation("ProposalSubmitter")
+  proposalVersions   ProposalVersion[]
 
   @@map("users")
 }
@@ -39,13 +70,736 @@ enum QuoteStatus {
   SENT
 }
 
-/// Lifecycle of a conversation as a sales lead.
+/// Lifecycle of a *conversation* as a sales lead — the inbox's own shorthand,
+/// predating the CRM. A conversation that is linked to a Lead defers to
+/// `Lead.stage`; this stays for unlinked inbox threads.
 enum LeadStatus {
   NEW
   QUALIFIED
   QUOTE_SENT
   WON
   LOST
+}
+
+// --- CRM -------------------------------------------------------------------
+
+/// Where the lead came from. Instagram and WhatsApp are listed now even though
+/// their automatic capture is not switched on yet — a consultant can already
+/// record that a walk-in came from an Instagram post.
+enum LeadSource {
+  MANUAL
+  INSTAGRAM
+  WHATSAPP
+  WEBSITE
+  REFERRAL
+  PHONE
+  EMAIL
+  WALK_IN
+  OTHER
+}
+
+/// The full sales lifecycle. Named `LeadStage` rather than `LeadStatus` only
+/// because the inbox already owns that name; they are separate concepts.
+enum LeadStage {
+  NEW
+  CONTACTED
+  QUALIFIED
+  PROPOSAL_PREPARING
+  PROPOSAL_SENT
+  FOLLOW_UP
+  NEGOTIATION
+  WON
+  LOST
+  ON_HOLD
+}
+
+enum LeadPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+/// Mandatory when a lead is marked LOST — a lost deal with no reason teaches
+/// the business nothing.
+enum LostReason {
+  BUDGET
+  CHOSE_COMPETITOR
+  DATES_CHANGED
+  TRIP_CANCELLED
+  NO_RESPONSE
+  NOT_INTERESTED
+  OTHER
+}
+
+enum ContactMethod {
+  PHONE
+  WHATSAPP
+  EMAIL
+  IN_PERSON
+  OTHER
+}
+
+/// Everything that appears on the lead timeline.
+enum ActivityType {
+  LEAD_CREATED
+  STAGE_CHANGED
+  ASSIGNED
+  NOTE
+  REQUIREMENT_UPDATED
+  AI_SUMMARY
+  FOLLOW_UP_SCHEDULED
+  FOLLOW_UP_COMPLETED
+  FOLLOW_UP_MISSED
+  PROPOSAL_GENERATED
+  PROPOSAL_SENT
+  INVOICE_GENERATED
+  PAYMENT_RECEIVED
+}
+
+/// A person, not a trip. One customer can come back for many trips, so leads
+/// hang off the customer rather than duplicating their contact details.
+model Customer {
+  id               String         @id @default(uuid())
+  name             String
+  phone            String?
+  whatsapp         String?
+  email            String?
+  preferredContact ContactMethod?
+  city             String?
+  country          String?
+  notes            String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  leads    Lead[]
+  invoices Invoice[]
+
+  @@index([name])
+  @@index([phone])
+  @@index([whatsapp])
+  @@index([email])
+  @@map("customers")
+}
+
+/// One enquiry about one trip.
+model Lead {
+  id String @id @default(uuid())
+
+  /// Human-facing identifier ("TDH-L-00042"), handed out by a Postgres
+  /// sequence so two consultants creating leads at once cannot collide.
+  reference String @unique @default(dbgenerated("('TDH-L-' || lpad(nextval('lead_reference_seq')::text, 5, '0'))"))
+
+  customerId String
+
+  // --- Travel requirements -------------------------------------------------
+  destination          String?
+  departureCity        String?
+  travelStart          DateTime?
+  travelEnd            DateTime?
+  adults               Int?
+  children             Int?
+  /// One entry per child, in years.
+  childAges            Int[]
+  tripType             String?
+  hotelCategory        String?
+  mealPreference       String?
+  transportRequired    Boolean   @default(false)
+  flightRequired       Boolean   @default(false)
+  activityRequirements String?
+  specialRequirements  String?
+  /// Whole currency units. The consultant types round numbers, as with quotes.
+  budget               Int?
+  currency             String    @default("INR")
+
+  /// The customer's own words, kept verbatim. `requirementSummary` is the
+  /// tidied version; both are stored so the original is never lost.
+  rawRequirement     String?
+  requirementSummary String?
+
+  // --- CRM -----------------------------------------------------------------
+  source         LeadSource   @default(MANUAL)
+  stage          LeadStage    @default(NEW)
+  priority       LeadPriority @default(MEDIUM)
+  tags           String[]
+  assignedToId   String?
+  createdById    String?
+  lostReason     LostReason?
+  lostNotes      String?
+  nextAction     String?
+  /// Drives the "overdue follow-up" filter and, later, the follow-up engine.
+  nextFollowUpAt DateTime?
+  lastActivityAt DateTime     @default(now())
+  notes          String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  customer      Customer       @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  assignedTo    User?          @relation("LeadAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+  createdBy     User?          @relation("LeadCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  activities    LeadActivity[]
+  conversations Conversation[]
+  proposals     Proposal[]
+  followUps     FollowUp[]
+  invoices      Invoice[]
+
+  @@index([stage])
+  @@index([assignedToId])
+  @@index([nextFollowUpAt])
+  @@index([createdAt(sort: Desc)])
+  /// Employees see the leads they were given and the ones they created; the
+  /// second half of that filter had no index.
+  @@index([createdById])
+  @@index([destination])
+  @@map("leads")
+}
+
+/// Where a proposal stands with the customer. Distinct from `QuoteStatus`,
+/// which belongs to the inbox's quick quotes and only has two states.
+enum ProposalStatus {
+  DRAFT
+  GENERATED
+  SENT
+  FOLLOW_UP
+  NEGOTIATION
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+/// A priced offer to a lead.
+///
+/// The identity of the offer — its number, who it is for, where it stands —
+/// lives here. The *content* lives in ProposalVersion, because a proposal that
+/// is renegotiated must keep every figure it previously showed the customer.
+model Proposal {
+  id String @id @default(uuid())
+
+  /// Human-facing identifier ("TDH-P-00042"), stable across every version.
+  reference String @unique @default(dbgenerated("('TDH-P-' || lpad(nextval('proposal_reference_seq')::text, 5, '0'))"))
+
+  leadId String
+  status ProposalStatus @default(DRAFT)
+
+  createdById   String?
+  submittedById String?
+  /// When it was actually put in front of the customer. Drives the follow-up
+  /// engine in the next phase.
+  submittedAt   DateTime?
+  /// When the customer accepted or rejected it.
+  decidedAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lead        Lead              @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  createdBy   User?             @relation("ProposalCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  submittedBy User?             @relation("ProposalSubmitter", fields: [submittedById], references: [id], onDelete: SetNull)
+  versions    ProposalVersion[]
+  followUps   FollowUp[]
+  invoices    Invoice[]
+
+  @@index([leadId])
+  @@index([status])
+  @@index([submittedAt])
+  /// Every report window is a scan over `createdAt`.
+  @@index([createdAt])
+  @@map("proposals")
+}
+
+/// One immutable revision of a proposal.
+///
+/// Never updated once its PDF has been generated and never deleted: the whole
+/// point is that "version 2 was ₹145,000" stays answerable a year later. The
+/// current version is simply the highest-numbered one — there is no "active"
+/// flag to fall out of step with reality.
+model ProposalVersion {
+  id         String @id @default(uuid())
+  proposalId String
+  /// 1-based, unique per proposal.
+  version    Int
+
+  // --- Customer-facing content --------------------------------------------
+  // Snapshotted from the lead rather than joined, so a later change to the
+  // lead cannot silently rewrite a document the customer already has.
+  title            String
+  destination      String?
+  travelStart      DateTime?
+  travelEnd        DateTime?
+  adults           Int?
+  children         Int?
+  executiveSummary String?
+  itinerary        String?
+  inclusions       String?
+  exclusions       String?
+  hotelInfo        String?
+  transportInfo    String?
+  activities       String?
+  terms            String?
+  validUntil       DateTime
+
+  // --- Money ---------------------------------------------------------------
+  currency     String @default("INR")
+  /// What the customer is asked to pay. Whole currency units.
+  sellingPrice Int    @default(0)
+  /// What the trip costs us. NEVER leaves the server for a customer-facing
+  /// document, and never reaches an employee without permission.
+  actualCost   Int    @default(0)
+  /// Gross profit and margin are deliberately NOT stored: they are derived
+  /// from the two figures above, so they cannot drift out of agreement.
+
+  /// Object key in MinIO. Null until the PDF has been generated.
+  pdfPath String?
+
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  proposal  Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  createdBy User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@unique([proposalId, version])
+  @@index([proposalId, version(sort: Desc)])
+  @@map("proposal_versions")
+}
+
+/// What somebody did.
+///
+/// Coarse on purpose: the useful question of an audit trail is "who changed
+/// this, and when", and a fine-grained taxonomy mostly produces categories
+/// nobody ever filters by.
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  ASSIGN
+  STATUS_CHANGE
+  SUBMIT
+  PAYMENT
+  CONFIG
+  AUTH
+}
+
+/// An append-only record of every change anyone made.
+///
+/// There is no update and no delete anywhere in the application for this
+/// table — not a guard that could be bypassed, simply no code that writes to
+/// an existing row (§31). The actor's name and role are copied in rather than
+/// joined, so the trail still reads correctly after somebody leaves and their
+/// account is removed.
+model AuditLog {
+  id String @id @default(uuid())
+
+  /// Insertion order. Several entries can share a millisecond, and `createdAt`
+  /// alone cannot then say which came first.
+  seq Int @default(autoincrement())
+
+  /// What kind of thing was touched: "lead", "invoice", "smtp"…
+  entity   String
+  entityId String?
+  action   AuditAction
+  /// One line, already written for a human to read.
+  summary  String
+
+  actorId   String?
+  /// Denormalised so the record survives the account being deleted.
+  actorName String
+  actorRole String
+  /// Where it came from, for the security-minded reader.
+  ip        String?
+  /// The HTTP result, so refused attempts are on the record too.
+  status    Int
+
+  createdAt DateTime @default(now())
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([entity, entityId])
+  @@index([actorId, seq(sort: Desc)])
+  @@index([seq(sort: Desc)])
+  @@map("audit_logs")
+}
+
+/// What an expense is for.
+///
+/// A table rather than an enum because §23 asks for administrators to be able
+/// to add their own — an enum would need a migration and a deployment for
+/// "Visa fees".
+model ExpenseCategory {
+  id   String @id @default(uuid())
+  name String @unique
+  /// Stable identifier for the seeded categories, so renaming "Marketing" to
+  /// "Marketing & PR" does not orphan a year of reporting.
+  slug String @unique
+
+  active    Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  expenses Expense[]
+
+  @@map("expense_categories")
+}
+
+/// Money the company spent. Internal throughout — never customer-facing, and
+/// never visible to an employee.
+model Expense {
+  id String @id @default(uuid())
+
+  reference String @unique @default(dbgenerated("('TDH-EXP-' || lpad(nextval('expense_reference_seq')::text, 5, '0'))"))
+
+  /// The date the money went out, which is rarely the date it was recorded.
+  spentAt     DateTime
+  categoryId  String
+  description String
+  /// Whole currency units, like every other amount in the application.
+  amount      Int
+  currency    String   @default("INR")
+
+  /// The staff member who disbursed it. Null means the company account did.
+  paidById          String?
+  method            PaymentMethod
+  /// Who was paid.
+  vendor            String?
+  /// Bill number, UPI reference, whatever ties this to the vendor's record.
+  externalReference String?
+
+  /// Object key in MinIO. The receipt is the evidence behind the number.
+  receiptPath String?
+  receiptName String?
+
+  notes       String?
+  createdById String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  category  ExpenseCategory @relation(fields: [categoryId], references: [id])
+  paidBy    User?           @relation("ExpensePayer", fields: [paidById], references: [id], onDelete: SetNull)
+  createdBy User?           @relation("ExpenseCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([spentAt(sort: Desc)])
+  @@index([categoryId, spentAt])
+  @@index([currency, spentAt])
+  @@map("expenses")
+}
+
+/// The document's own state. Distinct from whether it has been paid, which is
+/// derived from the payments against it and is never stored.
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  BANK_TRANSFER
+  UPI
+  CASH
+  CARD
+  OTHER
+}
+
+/// A bill to a customer for a trip.
+///
+/// Amounts are snapshotted rather than joined from the proposal: an invoice is
+/// a financial document, and a later change to a proposal must not silently
+/// alter what somebody was billed.
+model Invoice {
+  id String @id @default(uuid())
+
+  /// Human-facing identifier ("TDH-INV-00042").
+  reference String @unique @default(dbgenerated("('TDH-INV-' || lpad(nextval('invoice_reference_seq')::text, 5, '0'))"))
+
+  leadId     String
+  customerId String
+  /// The proposal this was billed from, when there was one.
+  proposalId String?
+
+  status    InvoiceStatus @default(DRAFT)
+  issueDate DateTime
+  dueDate   DateTime
+
+  // --- What is being billed for -------------------------------------------
+  packageTitle String
+  destination  String?
+  travelStart  DateTime?
+  travelEnd    DateTime?
+  description  String?
+
+  // --- Money. Whole currency units, server-computed. ----------------------
+  currency       String @default("INR")
+  /// Before discount and tax.
+  packageAmount  Int
+  discountAmount Int    @default(0)
+  /// Tax rate in basis points — 1800 is 18%. Null means no tax applies, which
+  /// is a real answer: GST is not charged on every travel service, and
+  /// defaulting to a rate would silently overbill.
+  taxRateBps     Int?
+  /// Derived from the three above on write, and stored because a tax figure
+  /// on an issued document must not move when a rate is edited later.
+  taxAmount      Int    @default(0)
+  totalAmount    Int
+
+  // --- Who it is billed to ------------------------------------------------
+  billingName    String
+  billingAddress String?
+  billingEmail   String?
+  billingPhone   String?
+  /// The customer's own tax registration, when they need it on the document.
+  billingTaxId   String?
+
+  paymentTerms String?
+  notes        String?
+
+  /// Object key in MinIO. Null until the PDF has been generated.
+  pdfPath String?
+
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  lead      Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  customer  Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  proposal  Proposal? @relation(fields: [proposalId], references: [id], onDelete: SetNull)
+  createdBy User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  payments  Payment[]
+
+  @@index([leadId])
+  @@index([customerId])
+  @@index([status, dueDate])
+  /// Same reason as on proposals: the dashboard filters invoices by period.
+  @@index([createdAt])
+  @@map("invoices")
+}
+
+/// One receipt against an invoice. An invoice can have many.
+model Payment {
+  id String @id @default(uuid())
+
+  reference String @unique @default(dbgenerated("('TDH-PAY-' || lpad(nextval('payment_reference_seq')::text, 5, '0'))"))
+
+  invoiceId         String
+  paidAt            DateTime
+  /// Whole currency units, in the invoice's currency.
+  amount            Int
+  method            PaymentMethod
+  /// Bank reference, UPI transaction id, cheque number.
+  externalReference String?
+  notes             String?
+
+  recordedById String?
+  createdAt    DateTime @default(now())
+
+  invoice    Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  recordedBy User?   @relation(fields: [recordedById], references: [id], onDelete: SetNull)
+
+  @@index([invoiceId, paidAt])
+  @@map("payments")
+}
+
+/// Where a scheduled follow-up has got to.
+///
+/// The status *is* the idempotency: every scheduler pass only ever selects
+/// rows in the state before the one it is moving them to, so running twice
+/// changes nothing the first pass already did.
+enum FollowUpStatus {
+  PENDING
+  DUE
+  COMPLETED
+  MISSED
+  CANCELLED
+}
+
+/// What came of a follow-up, in the consultant's words.
+enum FollowUpOutcome {
+  NO_RESPONSE
+  INTERESTED
+  NEEDS_TIME
+  NEGOTIATING
+  REQUESTED_CHANGES
+  READY_TO_BOOK
+  NOT_INTERESTED
+  OTHER
+}
+
+/// A configurable follow-up schedule.
+///
+/// The default is day 1, 3, 5 and 7 after a proposal is submitted, but that
+/// lives in a row rather than in the code so it can be changed without a
+/// deployment.
+model FollowUpRule {
+  id   String @id @default(uuid())
+  name String
+
+  /// Days after submission, one entry per follow-up. `[1, 3, 5, 7]`.
+  offsetDays          Int[]
+  /// Email the assigned consultant when a follow-up falls due.
+  notifyAssignee      Boolean @default(true)
+  /// How long after the due time an untouched follow-up is left before it
+  /// counts as missed. Somebody who calls the customer that afternoon should
+  /// not be told off for it.
+  graceHours          Int     @default(24)
+  /// Whether the consultant must record an outcome to close it.
+  mandatory           Boolean @default(false)
+  /// Also email the administrators once this many follow-ups on one proposal
+  /// have been missed. Null disables escalation.
+  escalateAfterMissed Int?
+
+  /// Exactly one rule is the default, used when nothing else is specified.
+  isDefault Boolean @default(false)
+  active    Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  followUps FollowUp[]
+
+  @@map("follow_up_rules")
+}
+
+/// One scheduled contact with a customer about a proposal.
+model FollowUp {
+  id           String         @id @default(uuid())
+  proposalId   String
+  /// Denormalised from the proposal so the lead's follow-up list is one query.
+  leadId       String
+  ruleId       String?
+  /// 1-based position in the schedule that created it.
+  sequence     Int
+  dueAt        DateTime
+  status       FollowUpStatus @default(PENDING)
+  /// Who owes the call. Copied from the lead at creation, so reassigning the
+  /// lead later does not silently rewrite who missed what.
+  assignedToId String?
+
+  // --- What actually happened ---------------------------------------------
+  completedAt   DateTime?
+  completedById String?
+  comment       String?
+  contactMethod ContactMethod?
+  outcome       FollowUpOutcome?
+  nextAction    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  proposal    Proposal      @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  lead        Lead          @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  rule        FollowUpRule? @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  assignedTo  User?         @relation("FollowUpAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+  completedBy User?         @relation("FollowUpCompleter", fields: [completedById], references: [id], onDelete: SetNull)
+
+  @@unique([proposalId, sequence])
+  @@index([status, dueAt])
+  @@index([assignedToId, status, dueAt])
+  @@index([leadId])
+  @@map("follow_ups")
+}
+
+enum NotificationType {
+  FOLLOW_UP_DUE
+  FOLLOW_UP_MISSED
+  FOLLOW_UP_ESCALATED
+  LEAD_ASSIGNED
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+/// One message the application decided to send.
+///
+/// Persisted before it is dispatched, and `dedupeKey` is unique — which is
+/// what makes "one notification per missed follow-up" true even if the
+/// scheduler runs twice at once. The database refuses the second insert; no
+/// application-level locking is involved.
+model Notification {
+  id        String             @id @default(uuid())
+  type      NotificationType
+  status    NotificationStatus @default(PENDING)
+  /// Stable, derived from what the notification is about. See dedupeKeyFor().
+  dedupeKey String             @unique
+
+  recipientId    String?
+  recipientEmail String
+  subject        String
+  body           String
+
+  sentAt DateTime?
+  /// Why it failed, for an administrator to read. Never shown to a customer.
+  error  String?
+
+  createdAt DateTime @default(now())
+
+  recipient User? @relation(fields: [recipientId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([recipientId, createdAt(sort: Desc)])
+  @@map("notifications")
+}
+
+enum SmtpSecurity {
+  NONE
+  STARTTLS
+  SSL
+}
+
+/// The one SMTP configuration, held in a single row.
+///
+/// The password is encrypted at rest and is never returned by the API — not
+/// masked in the client, simply never serialised.
+model SmtpSettings {
+  /// Always "default". A settings table with one row beats a settings table
+  /// where nothing stops there being two.
+  id String @id @default("default")
+
+  host     String
+  port     Int
+  username String
+  /// AES-256-GCM. See notifications/secret.cipher.ts.
+  password String
+  security SmtpSecurity @default(STARTTLS)
+
+  fromEmail String
+  fromName  String
+
+  /// False parks the whole email system without losing the configuration.
+  active Boolean @default(true)
+
+  updatedAt DateTime @updatedAt
+
+  @@map("smtp_settings")
+}
+
+/// Append-only. The historical record of the customer relationship, so nothing
+/// here is ever edited or deleted by the application.
+model LeadActivity {
+  id String @id @default(uuid())
+
+  /// Insertion order. Several entries can land in the same millisecond — a
+  /// lead being created, assigned and staged by one click — and `createdAt`
+  /// alone cannot then say which came first. This can.
+  seq Int @default(autoincrement())
+
+  leadId  String
+  type    ActivityType
+  /// One line, already written for a human to read on the timeline.
+  summary String
+  detail  String?
+  /// Null for anything the scheduler did rather than a person.
+  actorId String?
+
+  createdAt DateTime @default(now())
+
+  lead  Lead  @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([leadId, seq(sort: Desc)])
+  @@map("lead_activities")
 }
 
 /// Provider access tokens that the app rotates by itself. The environment
@@ -103,30 +857,36 @@ model Conversation {
   status      LeadStatus @default(NEW)
   notes       String?
 
+  /// Set once an inbox thread has been attached to a CRM lead. Null for every
+  /// existing conversation, and for anyone who never leaves the inbox.
+  leadId String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   contact  Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  lead     Lead?     @relation(fields: [leadId], references: [id], onDelete: SetNull)
   messages Message[]
   quotes   Quote[]
 
   @@index([lastMessageAt(sort: Desc)])
   @@index([status])
   @@index([destination])
+  @@index([leadId])
   @@map("conversations")
 }
 
 model Message {
-  id             String           @id @default(uuid())
-  conversationId String
-  direction      MessageDirection
-  messageType    MessageType      @default(TEXT)
-  content        String
+  id                String           @id @default(uuid())
+  conversationId    String
+  direction         MessageDirection
+  messageType       MessageType      @default(TEXT)
+  content           String
   /// Provider message id. Unique, which is what makes ingestion idempotent.
-  externalMessageId String?       @unique
-  sentAt         DateTime         @default(now())
-  deliveredAt    DateTime?
-  createdAt      DateTime         @default(now())
+  externalMessageId String?          @unique
+  sentAt            DateTime         @default(now())
+  deliveredAt       DateTime?
+  createdAt         DateTime         @default(now())
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 

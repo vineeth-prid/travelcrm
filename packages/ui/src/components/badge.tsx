@@ -9,6 +9,10 @@ const badgeVariants = cva(
     variants: {
       variant: {
         neutral: 'border-border bg-muted text-muted-foreground',
+        /** Sun Yellow. Reserved for prices and one highlighted fact per view. */
+        accent: 'border-accent-border bg-accent-subtle text-accent-foreground',
+        primary: 'border-primary/20 bg-primary-subtle text-primary',
+        secondary: 'border-secondary-border bg-secondary-subtle text-secondary-foreground',
         success: 'border-success-border bg-success-subtle text-success-foreground',
         warning: 'border-warning-border bg-warning-subtle text-warning-foreground',
         danger: 'border-danger-border bg-danger-subtle text-danger-foreground',

@@ -1,10 +1,17 @@
 import { HttpException, HttpStatus } from '@nestjs/common';
 
 export type AiFault =
-  'not_configured' | 'timeout' | 'rate_limited' | 'rejected' | 'unreadable' | 'unreachable';
+  | 'not_configured'
+  | 'model_missing'
+  | 'timeout'
+  | 'rate_limited'
+  | 'rejected'
+  | 'unreadable'
+  | 'unreachable';
 
 const STATUS: Record<AiFault, HttpStatus> = {
   not_configured: HttpStatus.SERVICE_UNAVAILABLE,
+  model_missing: HttpStatus.SERVICE_UNAVAILABLE,
   timeout: HttpStatus.GATEWAY_TIMEOUT,
   rate_limited: HttpStatus.TOO_MANY_REQUESTS,
   rejected: HttpStatus.SERVICE_UNAVAILABLE,
@@ -14,12 +21,14 @@ const STATUS: Record<AiFault, HttpStatus> = {
 
 const MESSAGES: Record<AiFault, string> = {
   not_configured:
-    'The AI assistant is not connected yet. Add an OpenAI API key to the environment and restart the API.',
+    'The AI assistant is not switched on. Set AI_MODEL to a model the server has installed, then restart the API.',
+  model_missing:
+    'The AI server does not have the configured model. Check AI_MODEL against the models it has installed.',
   timeout: 'The AI assistant took too long to respond. Please try again.',
   rate_limited: 'The AI assistant is busy right now. Wait a moment and try again.',
-  rejected: 'The OpenAI account rejected the request. Check the API key and its usage limits.',
+  rejected: 'The AI server rejected the request. Check AI_API_KEY and any usage limits.',
   unreadable: 'The AI assistant returned something we could not read. Please try again.',
-  unreachable: 'Could not reach the AI assistant. Check your connection and try again.',
+  unreachable: 'Could not reach the AI assistant. Check that the AI server is running.',
 };
 
 /**

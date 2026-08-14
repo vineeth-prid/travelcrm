@@ -31,9 +31,14 @@ async function main(): Promise<void> {
   assert.equal(health.body.status, 'ok');
   assert.deepEqual(health.body.services, { api: 'up', database: 'up' });
 
-  const appInfo = await request(http).get(`${base}/settings/app-info`).expect(200);
-  assert.equal(appInfo.body.apiVersion, 'v1');
-  assert.equal(appInfo.body.name, 'Travel CRM');
+  // Version and environment are reconnaissance, so app-info sits behind the
+  // session even though it holds no customer data. /health stays open for
+  // Docker's health check.
+  await request(http).get(`${base}/settings/app-info`).expect(401);
+
+  // Every response carries them, including this unauthenticated one.
+  assert.equal(health.headers['x-content-type-options'], 'nosniff');
+  assert.equal(health.headers['content-security-policy'], "frame-ancestors 'none'");
 
   // --- protected route without a session ------------------------------------
   const unauthorized = await request(http).get(`${base}/me`).expect(401);
@@ -83,6 +88,13 @@ async function main(): Promise<void> {
   // --- authenticated requests ----------------------------------------------
   const me = await request(http).get(`${base}/me`).set('Cookie', sessionCookie).expect(200);
   assert.equal(me.body.id, prisma.users[0]?.id);
+
+  const appInfo = await request(http)
+    .get(`${base}/settings/app-info`)
+    .set('Cookie', sessionCookie)
+    .expect(200);
+  assert.equal(appInfo.body.apiVersion, 'v1');
+  assert.equal(appInfo.body.name, 'Travel CRM');
 
   const updated = await request(http)
     .patch(`${base}/me`)

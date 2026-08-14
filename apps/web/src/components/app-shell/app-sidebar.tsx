@@ -1,12 +1,13 @@
 'use client';
 
-import { Sidebar, SidebarNavItem } from '@travel-crm/ui';
-import { Plane } from 'lucide-react';
+import { Sidebar, SidebarNavItem, SidebarSection } from '@travel-crm/ui';
+import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
+import { useSession } from '@/features/auth/session-context';
 import { publicEnv } from '@/lib/env';
-import { navItems } from './nav-items';
+import { visibleSections, type NavItem } from './nav-items';
 
 interface AppSidebarProps {
   onNavigate?: () => void;
@@ -14,8 +15,30 @@ interface AppSidebarProps {
   showBrand?: boolean;
 }
 
+/** `/leads` must not light up while `/leads-something-else` is open. */
+function isActive(pathname: string, href: string): boolean {
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
 export function AppSidebar({ onNavigate, showBrand = true }: AppSidebarProps) {
   const pathname = usePathname();
+  const user = useSession();
+  const sections = visibleSections(user.role === 'ADMIN');
+
+  const renderItem = ({ label, href, icon: Icon, soon }: NavItem) =>
+    soon ? (
+      <SidebarNavItem key={href} disabled hint="Soon">
+        <Icon aria-hidden />
+        {label}
+      </SidebarNavItem>
+    ) : (
+      <SidebarNavItem key={href} asChild active={isActive(pathname, href)}>
+        <Link href={href} onClick={onNavigate}>
+          <Icon aria-hidden />
+          {label}
+        </Link>
+      </SidebarNavItem>
+    );
 
   return (
     <Sidebar
@@ -25,12 +48,16 @@ export function AppSidebar({ onNavigate, showBrand = true }: AppSidebarProps) {
           <Link
             href="/dashboard"
             onClick={onNavigate}
-            className="flex items-center gap-2 rounded-md font-semibold tracking-tight focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="flex items-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <span className="flex size-7 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <Plane className="size-4" aria-hidden />
-            </span>
-            Travel CRM
+            <Image
+              src="/brand/tour-de-india-logo-transparent.png"
+              alt="Tour De India Holidays"
+              width={640}
+              height={414}
+              priority
+              className="h-9 w-auto"
+            />
           </Link>
         ) : null
       }
@@ -40,14 +67,16 @@ export function AppSidebar({ onNavigate, showBrand = true }: AppSidebarProps) {
         </p>
       }
     >
-      {navItems.map(({ label, href, icon: Icon }) => (
-        <SidebarNavItem key={href} asChild active={pathname.startsWith(href)}>
-          <Link href={href} onClick={onNavigate}>
-            <Icon aria-hidden />
-            {label}
-          </Link>
-        </SidebarNavItem>
-      ))}
+      {sections.map((section) =>
+        section.label ? (
+          <SidebarSection key={section.label} label={section.label}>
+            {section.items.map(renderItem)}
+          </SidebarSection>
+        ) : (
+          // Unlabelled groups are rendered flat, not wrapped in a section.
+          section.items.map(renderItem)
+        ),
+      )}
     </Sidebar>
   );
 }

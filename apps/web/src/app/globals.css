@@ -3,48 +3,80 @@
 /* The design system lives outside this app, so Tailwind must scan it too. */
 @source '../../../../packages/ui/src';
 
+/*
+ * Tour De India Holidays brand palette. The six brand colours are the only
+ * hues in the application; everything below is either one of them or a tint of
+ * one. Token *names* are unchanged from the original theme on purpose — the
+ * design system in packages/ui reads them, so re-skinning happens here alone.
+ */
 @theme {
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  /* Headings, titles and important labels only. Never body copy. */
+  --font-heading: var(--font-poppins), var(--font-inter), ui-sans-serif, sans-serif;
+
+  /* --- Brand, exactly as supplied ---------------------------------------- */
+  --color-brand-teal: #00b48f;
+  --color-brand-slate: #2f3b47;
+  --color-brand-yellow: #f5d94f;
+  --color-brand-aqua: #78c0c0;
+  --color-brand-sky: #b4d8e4;
+  --color-brand-canvas: #fcfcfb;
 
   /* Surfaces & text */
-  --color-background: #f8fafc;
+  --color-background: #fcfcfb;
   --color-surface: #ffffff;
-  --color-foreground: #0f172a;
-  --color-muted: #f1f5f9;
-  --color-muted-foreground: #64748b;
-  --color-border: #e2e8f0;
-  --color-ring: #3b82f6;
+  --color-foreground: #2f3b47;
+  --color-muted: #f3f7f8;
+  --color-muted-foreground: #6b7a86;
+  --color-border: #e4ebee;
+  --color-ring: #00b48f;
 
-  /* Primary */
-  --color-primary: #2563eb;
-  --color-primary-hover: #1d4ed8;
-  --color-primary-subtle: #eff6ff;
+  /* Primary — Teal Green. CTAs, active states, primary actions. */
+  --color-primary: #00b48f;
+  --color-primary-hover: #009679;
+  --color-primary-subtle: #e6f8f4;
   --color-primary-foreground: #ffffff;
 
-  /* Success */
-  --color-success: #16a34a;
-  --color-success-subtle: #f0fdf4;
-  --color-success-border: #bbf7d0;
-  --color-success-foreground: #15803d;
+  /* Secondary — Soft Aqua. Subtle cards and supporting UI. */
+  --color-secondary: #78c0c0;
+  --color-secondary-subtle: #eef6f6;
+  --color-secondary-border: #cfe6e6;
+  --color-secondary-foreground: #2f6a6a;
 
-  /* Warning */
-  --color-warning: #d97706;
-  --color-warning-subtle: #fffbeb;
-  --color-warning-border: #fde68a;
-  --color-warning-foreground: #b45309;
+  /* Accent — Sun Yellow. Price badges, highlights, tags. Never a text field. */
+  --color-accent: #f5d94f;
+  --color-accent-subtle: #fdf8dd;
+  --color-accent-border: #efdd94;
+  --color-accent-foreground: #6b5806;
 
-  /* Error */
-  --color-danger: #dc2626;
-  --color-danger-hover: #b91c1c;
-  --color-danger-subtle: #fef2f2;
-  --color-danger-border: #fecaca;
-  --color-danger-foreground: #b91c1c;
+  /* Wash — Pale Sky. Photography sections and full-bleed backgrounds. */
+  --color-wash: #b4d8e4;
+  --color-wash-subtle: #eef6f9;
 
-  /* Information */
-  --color-info: #2563eb;
-  --color-info-subtle: #eff6ff;
-  --color-info-border: #bfdbfe;
-  --color-info-foreground: #1d4ed8;
+  /* Success — kept in the teal family so it reads as brand, not Bootstrap. */
+  --color-success: #0e9f7c;
+  --color-success-subtle: #e6f7f2;
+  --color-success-border: #b5e5d8;
+  --color-success-foreground: #077a5f;
+
+  /* Warning — Sun Yellow, darkened until it is legible as text. */
+  --color-warning: #c9a41a;
+  --color-warning-subtle: #fdf8dd;
+  --color-warning-border: #efdd94;
+  --color-warning-foreground: #8a6d0b;
+
+  /* Error — the one hue outside the palette; it has to be unmistakable. */
+  --color-danger: #d64545;
+  --color-danger-hover: #b93636;
+  --color-danger-subtle: #fdeeee;
+  --color-danger-border: #f4c9c9;
+  --color-danger-foreground: #b93636;
+
+  /* Information — Soft Aqua, darkened for contrast. */
+  --color-info: #3e8e9e;
+  --color-info-subtle: #eef6f8;
+  --color-info-border: #c2e0e6;
+  --color-info-foreground: #2f6e7b;
 }
 
 @layer base {
@@ -57,6 +89,23 @@
     color: var(--color-foreground);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
+  }
+
+  /* Poppins carries every heading; Inter carries everything you read. */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-heading);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  /* Tabular figures everywhere money and counts are shown. */
+  table {
+    font-variant-numeric: tabular-nums;
   }
 
   /* Only show focus rings for keyboard users. */

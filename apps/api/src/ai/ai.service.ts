@@ -3,16 +3,18 @@ import type {
   Conversation,
   ConversationSummary,
   ExtractedDetails,
+  LeadRequirementDraft,
   Message,
   SuggestedReply,
 } from '@travel-crm/sdk';
 
 import { ConversationsService } from '../communication/conversations.service';
 import { AiError } from './ai.error';
-import { parseExtraction } from './extraction.parser';
-import { OpenAiClient } from './openai.client';
+import { ChatClient, type AiStatus } from './chat.client';
+import { parseExtraction, parseRequirement } from './extraction.parser';
 import { buildExtractPrompt } from './prompts/extract.prompt';
 import { buildReplyPrompt } from './prompts/reply.prompt';
+import { buildRequirementPrompt } from './prompts/requirement.prompt';
 import { buildSummaryPrompt } from './prompts/summary.prompt';
 import { buildTranscript } from './transcript';
 
@@ -24,19 +26,19 @@ import { buildTranscript } from './transcript';
 @Injectable()
 export class AiService {
   constructor(
-    private readonly openai: OpenAiClient,
+    private readonly chat: ChatClient,
     private readonly conversations: ConversationsService,
   ) {}
 
   async summarise(conversationId: string): Promise<ConversationSummary> {
     const { transcript } = await this.load(conversationId);
-    const summary = await this.openai.complete(buildSummaryPrompt(transcript));
+    const summary = await this.chat.complete(buildSummaryPrompt(transcript));
     return { summary };
   }
 
   async extract(conversationId: string): Promise<ExtractedDetails> {
     const { transcript } = await this.load(conversationId);
-    const raw = await this.openai.complete(buildExtractPrompt(transcript));
+    const raw = await this.chat.complete(buildExtractPrompt(transcript));
 
     const details = parseExtraction(raw);
     if (!details) {
@@ -46,10 +48,34 @@ export class AiService {
     return details;
   }
 
+  /**
+   * Tidies a consultant's rough notes into a structured lead draft.
+   *
+   * Unlike the other three this works from pasted text rather than a
+   * conversation, so it is the one AI action available before a lead exists.
+   * It writes nothing: the draft goes back to the form for the consultant to
+   * check and correct, and only their save reaches the database.
+   */
+  async draftRequirement(notes: string, today: string): Promise<LeadRequirementDraft> {
+    const raw = await this.chat.complete(buildRequirementPrompt(notes, today));
+
+    const draft = parseRequirement(raw);
+    if (!draft) {
+      throw new AiError('unreadable', `unparseable requirement: ${raw.slice(0, 200)}`);
+    }
+
+    return draft;
+  }
+
+  /** What the assistant is pointed at, and what that server has installed. */
+  status(): Promise<AiStatus> {
+    return this.chat.status();
+  }
+
   async suggestReply(conversationId: string): Promise<SuggestedReply> {
     const { transcript, conversation } = await this.load(conversationId);
 
-    const reply = await this.openai.complete(
+    const reply = await this.chat.complete(
       buildReplyPrompt(transcript, {
         destination: conversation.destination,
         travelMonth: conversation.travelMonth,

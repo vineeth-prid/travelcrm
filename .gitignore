@@ -20,3 +20,15 @@ Thumbs.db
 .eslintcache
 
 docker/volumes/
+
+# Agent tool state, per-machine
+.claude-flow/
+.claude/settings.local.json
+.claude/proven-config.json
+.claude/.proven-config-version
+
+# Agent tool state, per-machine
+.claude-flow/
+.claude/settings.local.json
+.claude/proven-config.json
+.claude/.proven-config-version

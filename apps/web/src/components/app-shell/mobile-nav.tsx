@@ -13,7 +13,7 @@ export function MobileNav() {
       open={mobileNavOpen}
       onOpenChange={setMobileNavOpen}
       side="left"
-      title="Travel CRM"
+      title="Tour De India Holidays"
       description="Main navigation"
       className="max-w-64 lg:hidden"
     >

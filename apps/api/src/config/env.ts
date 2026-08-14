@@ -20,8 +20,21 @@ export const envSchema = z.object({
 
   LOG_LEVEL: z.enum(['error', 'warn', 'log', 'debug', 'verbose']).default('log'),
 
+  /**
+   * Requests per minute per IP address.
+   *
+   * Generous on purpose: an office behind one public address shares a single
+   * counter, and every page in the CRM makes several calls. Set too low, this
+   * throttles the staff rather than an attacker. Brute force is held back at
+   * the sign-in endpoint specifically, where a tight limit belongs.
+   */
+  RATE_LIMIT_PER_MINUTE: z.coerce.number().int().min(30).max(10_000).default(600),
+
   APP_VERSION: z.string().default('0.1.0'),
   BUILD_NUMBER: z.string().default('local'),
+
+  /** Where the links in notification emails point. */
+  APP_URL: z.string().url().default('http://localhost:3000'),
 
   // --- Meta (Instagram + WhatsApp Cloud) ------------------------------------
   // All optional: the app boots without them, and the affected channel reports
@@ -56,12 +69,22 @@ export const envSchema = z.object({
   WHATSAPP_PHONE_NUMBER_ID: z.string().default(''),
   WHATSAPP_ACCESS_TOKEN: z.string().default(''),
 
-  // --- OpenAI ---------------------------------------------------------------
-  // Optional like the channels above: without a key the AI assistant reports
+  // --- AI assistant ---------------------------------------------------------
+  // Speaks the OpenAI chat-completions protocol, which Ollama serves on /v1.
+  // Optional like the channels above: without a model the assistant reports
   // itself as unavailable rather than blocking startup.
-  OPENAI_API_KEY: z.string().default(''),
-  OPENAI_MODEL: z.string().default('gpt-4o-mini'),
-  OPENAI_BASE_URL: z.string().url().default('https://api.openai.com/v1'),
+  /** The `/v1` base of an Ollama server, or any OpenAI-compatible gateway. */
+  AI_BASE_URL: z.string().url().default('http://localhost:11434/v1'),
+  /**
+   * Deliberately empty by default. There is no sensible guess: the name has to
+   * match a model the server actually has installed, which `GET /ai/status`
+   * will list. Setting this is what switches the assistant on.
+   */
+  AI_MODEL: z.string().default(''),
+  /** Unused by Ollama; required by hosted gateways. */
+  AI_API_KEY: z.string().default(''),
+  /** Local models on modest hardware are slower than a hosted API. */
+  AI_TIMEOUT_MS: z.coerce.number().int().positive().default(60_000),
 
   // --- Object storage (MinIO) ----------------------------------------------
   /** Reached by the API. Inside Docker this is the service name. */
@@ -80,6 +103,31 @@ export const envSchema = z.object({
   /** Absolute path to a PNG or JPEG logo. Omitted from the PDF when blank. */
   COMPANY_LOGO_PATH: z.string().default(''),
   COMPANY_CONTACT: z.string().default(''),
+  /** The agency's own tax registration, printed on invoices when set. */
+  COMPANY_TAX_ID: z.string().default(''),
+  /** Free text: account name, number, IFSC, UPI ID — whatever customers need. */
+  COMPANY_BANK_DETAILS: z.string().default(''),
+
+  // --- Invoice defaults -----------------------------------------------------
+  // Prefilled into a new invoice; every one of them is editable per invoice.
+  /** Days from issue to due. */
+  INVOICE_DUE_DAYS: z.coerce.number().int().min(0).max(365).default(14),
+  /**
+   * Basis points — 1800 is 18% GST. Empty means no tax by default, which is
+   * deliberate: GST does not apply to every travel service, and a default rate
+   * would silently overbill.
+   */
+  INVOICE_DEFAULT_TAX_BPS: z
+    .string()
+    .default('')
+    .transform((value) => (value.trim() === '' ? null : Number(value)))
+    .refine(
+      (value) => value === null || (Number.isInteger(value) && value >= 0 && value <= 10_000),
+      'INVOICE_DEFAULT_TAX_BPS must be a whole number of basis points between 0 and 10000',
+    ),
+  INVOICE_PAYMENT_TERMS: z
+    .string()
+    .default('Payment is due by the date shown above. Please quote the invoice number.'),
 });
 
 export type Env = z.infer<typeof envSchema>;

@@ -10,6 +10,8 @@ import { Prisma } from '@prisma/client';
 import type { ApiErrorBody } from '@travel-crm/sdk';
 import type { Request, Response } from 'express';
 
+import { AuditRecorder } from '../audit/audit.recorder';
+
 interface Normalized {
   status: number;
   message: string;
@@ -44,10 +46,18 @@ function normalize(exception: unknown): Normalized {
   };
 }
 
-/** Converts every thrown value into the single error shape the SDK expects. */
+/**
+ * Converts every thrown value into the single error shape the SDK expects.
+ *
+ * Also the only place that sees a request a **guard** rejected — guards run
+ * before interceptors — so this is where refused attempts reach the audit
+ * trail. Without it, 401, 403 and 429 would be missing from it entirely.
+ */
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger('ExceptionFilter');
+
+  constructor(private readonly audit?: AuditRecorder) {}
 
   catch(exception: unknown, host: ArgumentsHost): void {
     const http = host.switchToHttp();
@@ -71,6 +81,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
     } else {
       this.logger.warn(`${context}: ${message}`);
     }
+
+    // Recorded before the response goes out, and never awaited: a failure to
+    // write the trail must not turn a 403 into a hung request.
+    void this.audit?.record(request, status);
 
     response.status(status).json(body);
   }

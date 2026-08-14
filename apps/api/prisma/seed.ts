@@ -15,8 +15,16 @@ async function main(): Promise<void> {
   try {
     const user = await prisma.user.upsert({
       where: { email },
-      update: { name },
-      create: { name, email, password: await bcrypt.hash(password, 12) },
+      // Re-running restores admin access and reactivates the account, which is
+      // the whole point of being able to re-run it.
+      update: { name, role: 'ADMIN', active: true },
+      create: {
+        name,
+        email,
+        password: await bcrypt.hash(password, 12),
+        role: 'ADMIN',
+        canViewOwnProfitability: true,
+      },
     });
     console.log(`Administrator ready: ${user.email}`);
   } finally {

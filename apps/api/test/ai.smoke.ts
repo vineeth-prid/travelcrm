@@ -1,6 +1,6 @@
 /**
  * End-to-end smoke test of the AI assistant. The real Nest application is
- * booted with the database stubbed and the OpenAI client replaced by a fake,
+ * booted with the database stubbed and the AI client replaced by a fake,
  * so the prompts, parsing, error translation and the "never writes anything"
  * guarantee are all exercised over HTTP.
  *
@@ -16,7 +16,7 @@ process.env.DATABASE_URL = 'postgresql://user:pass@localhost:5432/db';
 process.env.JWT_SECRET = 'smoke-test-secret-that-is-long-enough';
 process.env.LOG_LEVEL = 'error';
 
-/** What the fake OpenAI client will return, and what it was asked. */
+/** What the fake AI client will return, and what it was asked. */
 interface FakeCall {
   system: string;
   user: string;
@@ -26,7 +26,7 @@ interface FakeCall {
 const calls: FakeCall[] = [];
 let nextResponse: string | (() => never) = '';
 
-function createOpenAiFake() {
+function createChatFake() {
   return {
     isConfigured: true,
     complete: (request_: {
@@ -41,18 +41,26 @@ function createOpenAiFake() {
       if (typeof nextResponse === 'function') nextResponse();
       return Promise.resolve(nextResponse);
     },
+    status: () =>
+      Promise.resolve({
+        configured: true,
+        baseUrl: 'http://localhost:11434/v1',
+        model: 'llama3.1:8b',
+        availableModels: ['llama3.1:8b', 'qwen2.5:7b'],
+        reachable: true,
+      }),
   };
 }
 
 async function main(): Promise<void> {
   const { bootApp, sessionCookieFrom } = await import('./boot');
   const { ADMIN_PASSWORD } = await import('./prisma-stub');
-  const { OpenAiClient } = await import('../src/ai/openai.client');
+  const { ChatClient } = await import('../src/ai/chat.client');
   const { AiError } = await import('../src/ai/ai.error');
   const { MessageIngestService } = await import('../src/communication/message-ingest.service');
 
   const { app, prisma, base } = await bootApp((builder) =>
-    builder.overrideProvider(OpenAiClient).useValue(createOpenAiFake()),
+    builder.overrideProvider(ChatClient).useValue(createChatFake()),
   );
 
   const http = app.getHttpServer() as Parameters<typeof request>[0];
@@ -187,6 +195,177 @@ async function main(): Promise<void> {
     'the raw model output must not leak to the client',
   );
 
+  // --- status ---------------------------------------------------------------
+  // How an administrator finds out which model name to configure.
+  await request(http).get(`${base}/ai/status`).expect(401);
+
+  const status = await request(http).get(`${base}/ai/status`).set('Cookie', cookie).expect(200);
+  assert.equal(status.body.configured, true);
+  assert.equal(status.body.model, 'llama3.1:8b');
+  assert.deepEqual(status.body.availableModels, ['llama3.1:8b', 'qwen2.5:7b']);
+  assert.ok(!JSON.stringify(status.body).includes('apiKey'), 'the key is never reported');
+
+  // --- requirement drafting -------------------------------------------------
+  // The Phase 2 feature: rough notes in, structured lead draft out.
+  const NOTES =
+    'Family of 4, two adults and two kids aged 8 and 12. Want Dubai for 5 nights in ' +
+    'December. Budget around 1.5 lakh. Need hotel and airport transfers and desert safari.';
+
+  await request(http).post(`${base}/ai/requirement`).send({ text: NOTES }).expect(401);
+
+  const tooShort = await request(http)
+    .post(`${base}/ai/requirement`)
+    .set('Cookie', cookie)
+    .send({ text: 'Dubai' })
+    .expect(400);
+  assert.ok(tooShort.body.details.text?.length);
+
+  calls.length = 0;
+  nextResponse = JSON.stringify({
+    summary: 'Dubai, 5 nights in December for 2 adults and 2 children aged 8 and 12.',
+    fields: {
+      destination: 'Dubai',
+      departureCity: null,
+      travelStart: '2026-12-01',
+      travelEnd: '2026-12-06',
+      adults: 2,
+      children: 2,
+      childAges: [8, 12],
+      tripType: 'Family',
+      hotelCategory: null,
+      mealPreference: null,
+      transportRequired: true,
+      flightRequired: false,
+      activityRequirements: 'Desert safari',
+      specialRequirements: null,
+      budget: 150000,
+    },
+  });
+
+  const draft = await request(http)
+    .post(`${base}/ai/requirement`)
+    .set('Cookie', cookie)
+    .send({ text: NOTES, today: '2026-08-13' })
+    .expect(200);
+
+  assert.match(draft.body.summary, /Dubai/);
+  assert.equal(draft.body.fields.destination, 'Dubai');
+  assert.equal(draft.body.fields.adults, 2);
+  assert.deepEqual(draft.body.fields.childAges, [8, 12]);
+  assert.equal(draft.body.fields.transportRequired, true);
+  assert.equal(draft.body.fields.budget, 150000);
+  assert.equal(calls[0]!.json, true, 'drafting must ask the model for JSON');
+  assert.match(calls[0]!.user, /2026-08-13/, "today's date is given so relative dates resolve");
+  assert.match(calls[0]!.system, /never invent or calculate money/i);
+
+  // Nothing is written: this is the guarantee that makes the button safe.
+  assert.equal(prisma.leads.length, 0, 'drafting must not create a lead');
+  assert.equal(prisma.customers.length, 0, 'drafting must not create a customer');
+
+  // A model that returns extra keys — an invented price, most dangerously —
+  // has them dropped. Only whitelisted fields survive the parser.
+  nextResponse = JSON.stringify({
+    summary: 'Dubai package.',
+    fields: {
+      destination: 'Dubai',
+      childAges: [],
+      transportRequired: false,
+      flightRequired: false,
+      packagePrice: 185000,
+      estimatedCost: 140000,
+      taxAmount: 9250,
+      discount: 5000,
+    },
+  });
+  const sanitised = await request(http)
+    .post(`${base}/ai/requirement`)
+    .set('Cookie', cookie)
+    .send({ text: NOTES })
+    .expect(200);
+
+  const serialised = JSON.stringify(sanitised.body);
+  for (const invented of ['packagePrice', 'estimatedCost', 'taxAmount', 'discount', '185000']) {
+    assert.ok(
+      !serialised.includes(invented),
+      `the model's "${invented}" must not reach the client`,
+    );
+  }
+  assert.equal(sanitised.body.fields.budget, null, 'no budget was stated, so none is returned');
+
+  // Indian numbering: "1.5 lakh" is 150000, not 2. Stripping to digits alone
+  // would be wrong by four orders of magnitude and still look plausible.
+  nextResponse = JSON.stringify({
+    summary: 'Dubai trip.',
+    fields: { destination: 'Dubai', childAges: [], budget: '1.5 lakh' },
+  });
+  const lakhs = await request(http)
+    .post(`${base}/ai/requirement`)
+    .set('Cookie', cookie)
+    .send({ text: NOTES })
+    .expect(200);
+  assert.equal(lakhs.body.fields.budget, 150000);
+
+  // Individual bad fields are dropped rather than failing the whole draft.
+  nextResponse = JSON.stringify({
+    summary: 'Dubai trip.',
+    fields: {
+      destination: 'Dubai',
+      travelStart: 'sometime in December',
+      travelEnd: '2026-12-06',
+      adults: 'a couple',
+      childAges: 'two kids',
+      budget: 'unknown',
+    },
+  });
+  const partial = await request(http)
+    .post(`${base}/ai/requirement`)
+    .set('Cookie', cookie)
+    .send({ text: NOTES })
+    .expect(200);
+  assert.equal(partial.body.fields.destination, 'Dubai', 'the good field survives');
+  assert.equal(partial.body.fields.travelStart, null, 'a non-date is dropped');
+  assert.equal(partial.body.fields.adults, null);
+  assert.deepEqual(partial.body.fields.childAges, []);
+  assert.equal(partial.body.fields.budget, null);
+
+  // A return date before departure is worse than no date at all.
+  nextResponse = JSON.stringify({
+    summary: 'Dubai trip.',
+    fields: {
+      destination: 'Dubai',
+      travelStart: '2026-12-10',
+      travelEnd: '2026-12-01',
+      childAges: [],
+    },
+  });
+  const backwards = await request(http)
+    .post(`${base}/ai/requirement`)
+    .set('Cookie', cookie)
+    .send({ text: NOTES })
+    .expect(200);
+  assert.equal(backwards.body.fields.travelStart, '2026-12-10');
+  assert.equal(backwards.body.fields.travelEnd, null);
+
+  // No summary means there is nothing to show, so the whole draft fails.
+  nextResponse = JSON.stringify({ fields: { destination: 'Dubai', childAges: [] } });
+  await request(http)
+    .post(`${base}/ai/requirement`)
+    .set('Cookie', cookie)
+    .send({ text: NOTES })
+    .expect(502);
+
+  // Prose instead of JSON is a provider failure, not a lead.
+  nextResponse = 'Sure! Here is a lovely Dubai package for 185,000 rupees.';
+  const prose = await request(http)
+    .post(`${base}/ai/requirement`)
+    .set('Cookie', cookie)
+    .send({ text: NOTES })
+    .expect(502);
+  assert.ok(
+    !JSON.stringify(prose.body).includes('185,000'),
+    'an invented price must never reach the client, even in an error',
+  );
+
   // --- suggested reply ------------------------------------------------------
   calls.length = 0;
   nextResponse = 'Thank you for contacting us. Could you confirm your preferred travel dates?';
@@ -226,7 +405,7 @@ async function main(): Promise<void> {
   const faults: [string, number, RegExp][] = [
     ['timeout', 504, /took too long/i],
     ['rate_limited', 429, /busy right now/i],
-    ['not_configured', 503, /not connected yet/i],
+    ['not_configured', 503, /not switched on/i],
     ['unreachable', 502, /could not reach/i],
   ];
 

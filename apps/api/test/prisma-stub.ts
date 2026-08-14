@@ -2,18 +2,392 @@
  * In-memory stand-in for PrismaService, covering exactly the queries the API
  * issues. It lets the smoke tests boot the real application without a database.
  */
+import { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { randomUUID } from 'node:crypto';
 
 export const ADMIN_PASSWORD = 'CorrectHorse1';
+export const EMPLOYEE_PASSWORD = 'StapleBattery2';
+export const EMPLOYEE_EMAIL = 'rahul@travelcrm.test';
 
 export interface UserRow {
   id: string;
   name: string;
   email: string;
   password: string;
+  role: string;
+  active: boolean;
+  canViewOwnProfitability: boolean;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface CustomerRow {
+  id: string;
+  name: string;
+  phone: string | null;
+  whatsapp: string | null;
+  email: string | null;
+  preferredContact: string | null;
+  city: string | null;
+  country: string | null;
+  notes: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface LeadRow {
+  id: string;
+  reference: string;
+  customerId: string;
+  destination: string | null;
+  departureCity: string | null;
+  travelStart: Date | null;
+  travelEnd: Date | null;
+  adults: number | null;
+  children: number | null;
+  childAges: number[];
+  tripType: string | null;
+  hotelCategory: string | null;
+  mealPreference: string | null;
+  transportRequired: boolean;
+  flightRequired: boolean;
+  activityRequirements: string | null;
+  specialRequirements: string | null;
+  budget: number | null;
+  currency: string;
+  rawRequirement: string | null;
+  requirementSummary: string | null;
+  source: string;
+  stage: string;
+  priority: string;
+  tags: string[];
+  assignedToId: string | null;
+  createdById: string | null;
+  lostReason: string | null;
+  lostNotes: string | null;
+  nextAction: string | null;
+  nextFollowUpAt: Date | null;
+  lastActivityAt: Date;
+  notes: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface ProposalRow {
+  id: string;
+  reference: string;
+  leadId: string;
+  status: string;
+  createdById: string | null;
+  submittedById: string | null;
+  submittedAt: Date | null;
+  decidedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface ProposalVersionRow {
+  id: string;
+  proposalId: string;
+  version: number;
+  title: string;
+  destination: string | null;
+  travelStart: Date | null;
+  travelEnd: Date | null;
+  adults: number | null;
+  children: number | null;
+  executiveSummary: string | null;
+  itinerary: string | null;
+  inclusions: string | null;
+  exclusions: string | null;
+  hotelInfo: string | null;
+  transportInfo: string | null;
+  activities: string | null;
+  terms: string | null;
+  validUntil: Date;
+  currency: string;
+  sellingPrice: number;
+  actualCost: number;
+  pdfPath: string | null;
+  createdById: string | null;
+  createdAt: Date;
+}
+
+export interface InvoiceRow {
+  id: string;
+  reference: string;
+  leadId: string;
+  customerId: string;
+  proposalId: string | null;
+  status: string;
+  issueDate: Date;
+  dueDate: Date;
+  packageTitle: string;
+  destination: string | null;
+  travelStart: Date | null;
+  travelEnd: Date | null;
+  description: string | null;
+  currency: string;
+  packageAmount: number;
+  discountAmount: number;
+  taxRateBps: number | null;
+  taxAmount: number;
+  totalAmount: number;
+  billingName: string;
+  billingAddress: string | null;
+  billingEmail: string | null;
+  billingPhone: string | null;
+  billingTaxId: string | null;
+  paymentTerms: string | null;
+  notes: string | null;
+  pdfPath: string | null;
+  createdById: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface PaymentRow {
+  id: string;
+  reference: string;
+  invoiceId: string;
+  paidAt: Date;
+  amount: number;
+  method: string;
+  externalReference: string | null;
+  notes: string | null;
+  recordedById: string | null;
+  createdAt: Date;
+}
+
+export interface AuditLogRow {
+  id: string;
+  seq: number;
+  entity: string;
+  entityId: string | null;
+  action: string;
+  summary: string;
+  actorId: string | null;
+  actorName: string;
+  actorRole: string;
+  ip: string | null;
+  status: number;
+  createdAt: Date;
+}
+
+export interface ExpenseCategoryRow {
+  id: string;
+  name: string;
+  slug: string;
+  active: boolean;
+  sortOrder: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface ExpenseRow {
+  id: string;
+  reference: string;
+  spentAt: Date;
+  categoryId: string;
+  description: string;
+  amount: number;
+  currency: string;
+  paidById: string | null;
+  method: string;
+  vendor: string | null;
+  externalReference: string | null;
+  receiptPath: string | null;
+  receiptName: string | null;
+  notes: string | null;
+  createdById: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface FollowUpRuleRow {
+  id: string;
+  name: string;
+  offsetDays: number[];
+  notifyAssignee: boolean;
+  graceHours: number;
+  mandatory: boolean;
+  escalateAfterMissed: number | null;
+  isDefault: boolean;
+  active: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface FollowUpRow {
+  id: string;
+  proposalId: string;
+  leadId: string;
+  ruleId: string | null;
+  sequence: number;
+  dueAt: Date;
+  status: string;
+  assignedToId: string | null;
+  completedAt: Date | null;
+  completedById: string | null;
+  comment: string | null;
+  contactMethod: string | null;
+  outcome: string | null;
+  nextAction: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface NotificationRow {
+  id: string;
+  type: string;
+  status: string;
+  dedupeKey: string;
+  recipientId: string | null;
+  recipientEmail: string;
+  subject: string;
+  body: string;
+  sentAt: Date | null;
+  error: string | null;
+  createdAt: Date;
+}
+
+export interface SmtpSettingsRow {
+  id: string;
+  host: string;
+  port: number;
+  username: string;
+  password: string;
+  security: string;
+  fromEmail: string;
+  fromName: string;
+  active: boolean;
+  updatedAt: Date;
+}
+
+export interface LeadActivityRow {
+  id: string;
+  seq: number;
+  leadId: string;
+  type: string;
+  summary: string;
+  detail: string | null;
+  actorId: string | null;
+  createdAt: Date;
+}
+
+/**
+ * A small interpreter for the subset of Prisma's `where` grammar the API uses:
+ * AND / OR, equality, and the handful of operators the lead filters need.
+ *
+ * Worth the 40 lines — the alternative is re-implementing every filter in the
+ * repository a second time here, and then keeping the two in step by hand.
+ */
+const OPERATORS = new Set([
+  'contains',
+  'equals',
+  'lt',
+  'lte',
+  'gt',
+  'gte',
+  'in',
+  'notIn',
+  'not',
+  'mode',
+]);
+
+function isOperatorObject(value: unknown): value is Record<string, unknown> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value) &&
+    !(value instanceof Date) &&
+    Object.keys(value).some((key) => OPERATORS.has(key))
+  );
+}
+
+function compare(actual: unknown, condition: Record<string, unknown>): boolean {
+  const insensitive = condition.mode === 'insensitive';
+  const fold = (value: unknown) =>
+    insensitive && typeof value === 'string' ? value.toLowerCase() : value;
+  const time = (value: unknown) => (value instanceof Date ? value.getTime() : value);
+
+  for (const [operator, expected] of Object.entries(condition)) {
+    switch (operator) {
+      case 'mode':
+        break;
+      case 'contains':
+        if (actual === null || actual === undefined) return false;
+        if (!String(fold(actual)).includes(String(fold(expected)))) return false;
+        break;
+      case 'equals':
+        if (fold(actual) !== fold(expected)) return false;
+        break;
+      case 'not':
+        if (fold(actual) === fold(expected)) return false;
+        break;
+      case 'lt':
+        if (!((time(actual) as number) < (time(expected) as number))) return false;
+        break;
+      case 'lte':
+        if (!((time(actual) as number) <= (time(expected) as number))) return false;
+        break;
+      case 'gt':
+        if (!((time(actual) as number) > (time(expected) as number))) return false;
+        break;
+      case 'gte':
+        if (!((time(actual) as number) >= (time(expected) as number))) return false;
+        break;
+      case 'in':
+        if (!(expected as unknown[]).includes(actual)) return false;
+        break;
+      case 'notIn':
+        if ((expected as unknown[]).includes(actual)) return false;
+        break;
+      default:
+        return false;
+    }
+  }
+  return true;
+}
+
+export function matchesWhere(row: Record<string, unknown>, where: unknown): boolean {
+  if (!where || typeof where !== 'object') return true;
+
+  for (const [key, condition] of Object.entries(where as Record<string, unknown>)) {
+    if (condition === undefined) continue;
+
+    if (key === 'AND') {
+      if (!(condition as unknown[]).every((clause) => matchesWhere(row, clause))) return false;
+      continue;
+    }
+    if (key === 'OR') {
+      if (!(condition as unknown[]).some((clause) => matchesWhere(row, clause))) return false;
+      continue;
+    }
+    if (key === 'NOT') {
+      if (matchesWhere(row, condition)) return false;
+      continue;
+    }
+
+    const actual = row[key];
+
+    if (isOperatorObject(condition)) {
+      if (!compare(actual, condition)) return false;
+      continue;
+    }
+
+    // A plain object here is a relation filter, e.g. `customer: { name: ... }`.
+    if (typeof condition === 'object' && condition !== null && !(condition instanceof Date)) {
+      if (!actual || typeof actual !== 'object') return false;
+      if (!matchesWhere(actual as Record<string, unknown>, condition)) return false;
+      continue;
+    }
+
+    if (actual !== condition) return false;
+  }
+
+  return true;
 }
 
 export interface ContactRow {
@@ -112,6 +486,22 @@ class UniqueViolation extends Error {
   readonly code = 'P2002';
 }
 
+/**
+ * A real `PrismaClientKnownRequestError`, not a look-alike.
+ *
+ * The notification service decides whether a duplicate is an error or a
+ * no-op with `instanceof Prisma.PrismaClientKnownRequestError`, so a stub that
+ * threw its own class would take the wrong branch and the dedupe test would
+ * pass for the wrong reason.
+ */
+function uniqueViolation(target: string): Prisma.PrismaClientKnownRequestError {
+  return new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+    code: 'P2002',
+    clientVersion: 'stub',
+    meta: { target },
+  });
+}
+
 export function createPrismaStub() {
   const users: UserRow[] = [
     {
@@ -119,11 +509,81 @@ export function createPrismaStub() {
       name: 'Ada Lovelace',
       email: 'admin@travelcrm.test',
       password: bcrypt.hashSync(ADMIN_PASSWORD, 4),
+      role: 'ADMIN',
+      active: true,
+      canViewOwnProfitability: true,
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    },
+    {
+      id: '22222222-2222-4222-8222-222222222222',
+      name: 'Rahul Sharma',
+      email: 'rahul@travelcrm.test',
+      password: bcrypt.hashSync(EMPLOYEE_PASSWORD, 4),
+      role: 'EMPLOYEE',
+      active: true,
+      canViewOwnProfitability: false,
+      createdAt: new Date('2026-01-02T00:00:00.000Z'),
+      updatedAt: new Date('2026-01-02T00:00:00.000Z'),
+    },
+  ];
+  const contacts: ContactRow[] = [];
+  const customers: CustomerRow[] = [];
+  const leads: LeadRow[] = [];
+  const leadActivities: LeadActivityRow[] = [];
+  const proposals: ProposalRow[] = [];
+  const proposalVersions: ProposalVersionRow[] = [];
+  const followUps: FollowUpRow[] = [];
+  const notifications: NotificationRow[] = [];
+  const smtpSettings: SmtpSettingsRow[] = [];
+  /** The Day 1/3/5/7 rule the migration seeds. */
+  const followUpRules: FollowUpRuleRow[] = [
+    {
+      id: '33333333-3333-4333-8333-333333333333',
+      name: 'Standard proposal follow-up',
+      offsetDays: [1, 3, 5, 7],
+      notifyAssignee: true,
+      graceHours: 24,
+      mandatory: false,
+      escalateAfterMissed: null,
+      isDefault: true,
+      active: true,
       createdAt: new Date('2026-01-01T00:00:00.000Z'),
       updatedAt: new Date('2026-01-01T00:00:00.000Z'),
     },
   ];
-  const contacts: ContactRow[] = [];
+  const invoices: InvoiceRow[] = [];
+  const payments: PaymentRow[] = [];
+  const auditLogs: AuditLogRow[] = [];
+  let auditSeq = 0;
+  const expenses: ExpenseRow[] = [];
+  /** The categories the migration seeds. */
+  const expenseCategories: ExpenseCategoryRow[] = [
+    ['Advertising', 'advertising', 10],
+    ['Marketing', 'marketing', 20],
+    ['Office', 'office', 30],
+    ['Salaries', 'salaries', 40],
+    ['Travel', 'travel', 50],
+    ['Software', 'software', 60],
+    ['Vendor', 'vendor', 70],
+    ['Operations', 'operations', 80],
+    ['Bank & payment fees', 'bank-fees', 90],
+    ['Miscellaneous', 'misc', 100],
+  ].map(([name, slug, sortOrder]) => ({
+    id: randomUUID(),
+    name: name as string,
+    slug: slug as string,
+    active: true,
+    sortOrder: sortOrder as number,
+    createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+  }));
+  let expenseCounter = 0;
+  let leadCounter = 0;
+  let proposalCounter = 0;
+  let invoiceCounter = 0;
+  let paymentCounter = 0;
+  let activitySeq = 0;
   const conversations: ConversationRow[] = [];
   const messages: MessageRow[] = [];
   const quotes: QuoteRow[] = [];
@@ -140,6 +600,20 @@ export function createPrismaStub() {
 
   const stub = {
     users,
+    customers,
+    leads,
+    leadActivities,
+    proposals,
+    proposalVersions,
+    followUps,
+    followUpRules,
+    notifications,
+    smtpSettings,
+    invoices,
+    payments,
+    expenses,
+    expenseCategories,
+    auditLogs,
     contacts,
     conversations,
     messages,
@@ -151,10 +625,43 @@ export function createPrismaStub() {
     $disconnect: () => Promise.resolve(),
     isReachable: () => Promise.resolve(true),
     // Interactive transactions run against the same store; there is nothing to
-    // isolate in a single-threaded stub.
-    $transaction: <T>(work: (tx: typeof stub) => Promise<T>): Promise<T> => work(stub),
+    // isolate in a single-threaded stub. The array form is used for the
+    // "rows and total in one round trip" pattern in LeadsRepository.
+    $transaction: <T>(work: ((tx: typeof stub) => Promise<T>) | Promise<unknown>[]) =>
+      Array.isArray(work) ? Promise.all(work) : work(stub),
 
     user: {
+      findMany: ({ where, orderBy }: { where?: unknown; orderBy?: unknown } = {}) =>
+        Promise.resolve(
+          users
+            .filter((row) => matchesWhere(row as unknown as Record<string, unknown>, where))
+            .sort((a, b) => {
+              // The admin listing orders by active first, then name; every
+              // other caller just wants them alphabetical.
+              const byActive = Array.isArray(orderBy) ? Number(b.active) - Number(a.active) : 0;
+              return byActive !== 0 ? byActive : a.name.localeCompare(b.name);
+            }),
+        ),
+
+      create: ({ data }: { data: Partial<UserRow> & { email: string } }) => {
+        if (users.some((row) => row.email === data.email)) {
+          throw uniqueViolation('users_email_key');
+        }
+        const row: UserRow = {
+          id: randomUUID(),
+          name: '',
+          password: '',
+          role: 'EMPLOYEE',
+          active: true,
+          canViewOwnProfitability: false,
+          ...data,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+        users.push(row);
+        return Promise.resolve(row);
+      },
+
       findUnique: ({ where }: { where: { id?: string; email?: string } }) =>
         Promise.resolve(findUser(where)),
       update: ({ where, data }: { where: { id: string }; data: Partial<UserRow> }) => {
@@ -448,6 +955,757 @@ export function createPrismaStub() {
       },
     },
 
+    customer: {
+      create: ({ data }: { data: Partial<CustomerRow> & { name: string } }) => {
+        const row: CustomerRow = {
+          id: randomUUID(),
+          phone: null,
+          whatsapp: null,
+          email: null,
+          preferredContact: null,
+          city: null,
+          country: null,
+          notes: null,
+          ...data,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+        customers.push(row);
+        return Promise.resolve(row);
+      },
+
+      update: ({ where, data }: { where: { id: string }; data: Partial<CustomerRow> }) => {
+        const row = customers.find((item) => item.id === where.id);
+        if (!row) throw new Error('customer not found');
+        for (const [key, value] of Object.entries(data)) {
+          if (value !== undefined) (row as unknown as Record<string, unknown>)[key] = value;
+        }
+        row.updatedAt = new Date();
+        return Promise.resolve(row);
+      },
+
+      findMany: ({ where, take }: { where?: unknown; take?: number } = {}) => {
+        const matched = customers
+          .filter((row) => matchesWhere(row as unknown as Record<string, unknown>, where))
+          .slice(0, take ?? undefined)
+          .map((row) => ({
+            ...row,
+            leads: leads
+              .filter((lead) => lead.customerId === row.id)
+              .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+              .map((lead) => ({ reference: lead.reference, stage: lead.stage })),
+          }));
+        return Promise.resolve(matched);
+      },
+    },
+
+    lead: {
+      findMany: ({
+        where,
+        orderBy,
+        skip,
+        take,
+      }: {
+        where?: unknown;
+        orderBy?: Record<string, { sort: 'asc' | 'desc'; nulls?: 'first' | 'last' }>;
+        skip?: number;
+        take?: number;
+      } = {}) => {
+        const matched = leads
+          .map(withLeadRelations)
+          .filter((row) => matchesWhere(row as unknown as Record<string, unknown>, where));
+
+        const [field, order] = Object.entries(orderBy ?? {})[0] ?? ['createdAt', { sort: 'desc' }];
+        const sorted = [...matched].sort((a, b) => {
+          const left = (a as unknown as Record<string, unknown>)[field];
+          const right = (b as unknown as Record<string, unknown>)[field];
+          // Nulls last, as the repository asks for.
+          if (left == null && right == null) return 0;
+          if (left == null) return 1;
+          if (right == null) return -1;
+
+          const value = (input: unknown) => (input instanceof Date ? input.getTime() : input);
+          const l = value(left) as number | string;
+          const r = value(right) as number | string;
+          const direction = l < r ? -1 : l > r ? 1 : 0;
+          return order.sort === 'desc' ? -direction : direction;
+        });
+
+        const from = skip ?? 0;
+        return Promise.resolve(sorted.slice(from, take === undefined ? undefined : from + take));
+      },
+
+      count: ({ where }: { where?: unknown } = {}) =>
+        Promise.resolve(
+          leads
+            .map(withLeadRelations)
+            .filter((row) => matchesWhere(row as unknown as Record<string, unknown>, where)).length,
+        ),
+
+      findUnique: ({ where }: { where: { id: string } }) => {
+        const row = leads.find((item) => item.id === where.id);
+        return Promise.resolve(row ? withLeadRelations(row) : null);
+      },
+
+      findUniqueOrThrow: ({ where }: { where: { id: string } }) => {
+        const row = leads.find((item) => item.id === where.id);
+        if (!row) throw new Error('lead not found');
+        return Promise.resolve(withLeadRelations(row));
+      },
+
+      create: ({ data }: { data: Partial<LeadRow> & { customerId: string } }) => {
+        leadCounter += 1;
+        const row: LeadRow = {
+          id: randomUUID(),
+          reference: `TDH-L-${String(leadCounter).padStart(5, '0')}`,
+          destination: null,
+          departureCity: null,
+          travelStart: null,
+          travelEnd: null,
+          adults: null,
+          children: null,
+          childAges: [],
+          tripType: null,
+          hotelCategory: null,
+          mealPreference: null,
+          transportRequired: false,
+          flightRequired: false,
+          activityRequirements: null,
+          specialRequirements: null,
+          budget: null,
+          currency: 'INR',
+          rawRequirement: null,
+          requirementSummary: null,
+          source: 'MANUAL',
+          stage: 'NEW',
+          priority: 'MEDIUM',
+          tags: [],
+          assignedToId: null,
+          createdById: null,
+          lostReason: null,
+          lostNotes: null,
+          nextAction: null,
+          nextFollowUpAt: null,
+          lastActivityAt: new Date(),
+          notes: null,
+          ...data,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+        leads.push(row);
+        return Promise.resolve(withLeadRelations(row));
+      },
+
+      update: ({ where, data }: { where: { id: string }; data: Partial<LeadRow> }) => {
+        const row = leads.find((item) => item.id === where.id);
+        if (!row) throw new Error('lead not found');
+        for (const [key, value] of Object.entries(data)) {
+          if (value !== undefined) (row as unknown as Record<string, unknown>)[key] = value;
+        }
+        row.updatedAt = new Date();
+        return Promise.resolve(withLeadRelations(row));
+      },
+
+      updateMany: ({ where, data }: { where: unknown; data: Partial<LeadRow> }) => {
+        const matched = leads.filter((row) =>
+          matchesWhere(row as unknown as Record<string, unknown>, where),
+        );
+        for (const row of matched) {
+          Object.assign(row, data, { updatedAt: new Date() });
+        }
+        return Promise.resolve({ count: matched.length });
+      },
+    },
+
+    proposal: {
+      updateMany: ({ where, data }: { where: unknown; data: Partial<ProposalRow> }) => {
+        const matched = proposals.filter((row) =>
+          matchesWhere(row as unknown as Record<string, unknown>, where),
+        );
+        for (const row of matched) Object.assign(row, data, { updatedAt: new Date() });
+        return Promise.resolve({ count: matched.length });
+      },
+
+      // Handles both the lead's proposal list and the scheduler's expiry
+      // sweep, which filters on status rather than lead.
+      findMany: ({ where }: { where?: unknown } = {}) =>
+        Promise.resolve(
+          proposals
+            .filter((row) => matchesWhere(row as unknown as Record<string, unknown>, where))
+            .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+            .map(withProposalRelations),
+        ),
+
+      findUnique: ({ where }: { where: { id: string } }) => {
+        const row = proposals.find((item) => item.id === where.id);
+        return Promise.resolve(row ? withProposalRelations(row) : null);
+      },
+
+      findUniqueOrThrow: ({ where }: { where: { id: string } }) => {
+        const row = proposals.find((item) => item.id === where.id);
+        if (!row) throw new Error('proposal not found');
+        return Promise.resolve(withProposalRelations(row));
+      },
+
+      create: ({
+        data,
+      }: {
+        data: Partial<ProposalRow> & {
+          leadId: string;
+          versions: { create: Partial<ProposalVersionRow> & { version: number } };
+        };
+      }) => {
+        proposalCounter += 1;
+        const { versions, ...fields } = data;
+        const row: ProposalRow = {
+          id: randomUUID(),
+          reference: `TDH-P-${String(proposalCounter).padStart(5, '0')}`,
+          status: 'DRAFT',
+          createdById: null,
+          submittedById: null,
+          submittedAt: null,
+          decidedAt: null,
+          ...fields,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+        proposals.push(row);
+        addVersion(row.id, versions.create);
+        return Promise.resolve(withProposalRelations(row));
+      },
+
+      update: ({
+        where,
+        data,
+      }: {
+        where: { id: string };
+        data: Partial<ProposalRow> & {
+          versions?: { create: Partial<ProposalVersionRow> & { version: number } };
+        };
+      }) => {
+        const row = proposals.find((item) => item.id === where.id);
+        if (!row) throw new Error('proposal not found');
+
+        const { versions, ...fields } = data;
+        for (const [key, value] of Object.entries(fields)) {
+          if (value !== undefined) (row as unknown as Record<string, unknown>)[key] = value;
+        }
+        if (versions) addVersion(row.id, versions.create);
+
+        row.updatedAt = new Date();
+        return Promise.resolve(withProposalRelations(row));
+      },
+    },
+
+    proposalVersion: {
+      update: ({ where, data }: { where: { id: string }; data: Partial<ProposalVersionRow> }) => {
+        const row = proposalVersions.find((item) => item.id === where.id);
+        if (!row) throw new Error('proposal version not found');
+        // pdfPath is deliberately settable to null, so `undefined` is the only
+        // value Prisma would skip.
+        for (const [key, value] of Object.entries(data)) {
+          if (value !== undefined) (row as unknown as Record<string, unknown>)[key] = value;
+        }
+        return Promise.resolve(row);
+      },
+    },
+
+    leadActivity: {
+      create: ({ data }: { data: Omit<LeadActivityRow, 'id' | 'seq'> }) => {
+        activitySeq += 1;
+        const row: LeadActivityRow = { id: randomUUID(), seq: activitySeq, ...data };
+        leadActivities.push(row);
+        return Promise.resolve({
+          ...row,
+          actor: users.find((user) => user.id === row.actorId) ?? null,
+        });
+      },
+
+      findMany: ({ where }: { where: { leadId: string } }) =>
+        Promise.resolve(
+          leadActivities
+            .filter((row) => row.leadId === where.leadId)
+            .sort((a, b) => b.seq - a.seq)
+            .map((row) => ({
+              ...row,
+              actor: users.find((user) => user.id === row.actorId) ?? null,
+            })),
+        ),
+    },
+
+    auditLog: {
+      // Only create and findMany exist here, mirroring the application: there
+      // is no update and no delete anywhere for the audit trail.
+      create: ({ data }: { data: Omit<AuditLogRow, 'id' | 'seq' | 'createdAt'> }) => {
+        auditSeq += 1;
+        const row: AuditLogRow = {
+          id: randomUUID(),
+          seq: auditSeq,
+          ...data,
+          createdAt: new Date(),
+        };
+        auditLogs.push(row);
+        return Promise.resolve(row);
+      },
+
+      findMany: ({ where, take }: { where?: unknown; take?: number } = {}) =>
+        Promise.resolve(
+          auditLogs
+            .filter((row) => matchesWhere(row as unknown as Record<string, unknown>, where))
+            .sort((a, b) => b.seq - a.seq)
+            .slice(0, take ?? undefined),
+        ),
+    },
+
+    expenseCategory: {
+      findMany: ({ orderBy }: { orderBy?: unknown } = {}) =>
+        Promise.resolve(
+          orderBy
+            ? [...expenseCategories].sort(
+                (a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name),
+              )
+            : [...expenseCategories],
+        ),
+
+      findUnique: ({ where }: { where: { id: string } }) =>
+        Promise.resolve(expenseCategories.find((row) => row.id === where.id) ?? null),
+
+      create: ({
+        data,
+      }: {
+        data: Partial<ExpenseCategoryRow> & { name: string; slug: string };
+      }) => {
+        if (expenseCategories.some((row) => row.name === data.name)) {
+          throw uniqueViolation('expense_categories_name_key');
+        }
+        if (expenseCategories.some((row) => row.slug === data.slug)) {
+          throw uniqueViolation('expense_categories_slug_key');
+        }
+        const row: ExpenseCategoryRow = {
+          id: randomUUID(),
+          active: true,
+          sortOrder: 500,
+          ...data,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+        expenseCategories.push(row);
+        return Promise.resolve(row);
+      },
+
+      update: ({ where, data }: { where: { id: string }; data: Partial<ExpenseCategoryRow> }) => {
+        const row = expenseCategories.find((item) => item.id === where.id);
+        if (!row) throw new Error('category not found');
+        if (data.name && expenseCategories.some((c) => c.name === data.name && c.id !== row.id)) {
+          throw uniqueViolation('expense_categories_name_key');
+        }
+        Object.assign(row, data, { updatedAt: new Date() });
+        return Promise.resolve(row);
+      },
+    },
+
+    expense: {
+      findMany: ({
+        where,
+        take,
+        orderBy,
+      }: { where?: unknown; take?: number; orderBy?: { spentAt?: 'asc' | 'desc' } } = {}) => {
+        const matched = expenses
+          .map(withExpenseRelations)
+          .filter((row) => matchesWhere(row as unknown as Record<string, unknown>, where))
+          .sort((a, b) =>
+            orderBy?.spentAt === 'asc'
+              ? a.spentAt.getTime() - b.spentAt.getTime()
+              : b.spentAt.getTime() - a.spentAt.getTime(),
+          );
+        return Promise.resolve(matched.slice(0, take ?? undefined));
+      },
+
+      findUnique: ({ where }: { where: { id: string } }) => {
+        const row = expenses.find((item) => item.id === where.id);
+        return Promise.resolve(row ? withExpenseRelations(row) : null);
+      },
+
+      create: ({
+        data,
+      }: {
+        data: Partial<ExpenseRow> & { categoryId: string; amount: number };
+      }) => {
+        expenseCounter += 1;
+        const row: ExpenseRow = {
+          id: randomUUID(),
+          reference: `TDH-EXP-${String(expenseCounter).padStart(5, '0')}`,
+          spentAt: new Date(),
+          description: '',
+          currency: 'INR',
+          paidById: null,
+          method: 'OTHER',
+          vendor: null,
+          externalReference: null,
+          receiptPath: null,
+          receiptName: null,
+          notes: null,
+          createdById: null,
+          ...data,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+        expenses.push(row);
+        return Promise.resolve(withExpenseRelations(row));
+      },
+
+      update: ({ where, data }: { where: { id: string }; data: Partial<ExpenseRow> }) => {
+        const row = expenses.find((item) => item.id === where.id);
+        if (!row) throw new Error('expense not found');
+        for (const [key, value] of Object.entries(data)) {
+          if (value !== undefined) (row as unknown as Record<string, unknown>)[key] = value;
+        }
+        row.updatedAt = new Date();
+        return Promise.resolve(withExpenseRelations(row));
+      },
+
+      delete: ({ where }: { where: { id: string } }) => {
+        const index = expenses.findIndex((item) => item.id === where.id);
+        if (index === -1) throw new Error('expense not found');
+        const [row] = expenses.splice(index, 1);
+        return Promise.resolve(row);
+      },
+
+      aggregate: ({ where }: { where?: unknown } = {}) => {
+        const matched = expenses.filter((row) =>
+          matchesWhere(row as unknown as Record<string, unknown>, where),
+        );
+        return Promise.resolve({
+          _sum: { amount: matched.reduce((sum, row) => sum + row.amount, 0) },
+          _count: matched.length,
+        });
+      },
+
+      groupBy: ({ by, where }: { by: string[]; where?: unknown }) => {
+        const matched = expenses.filter((row) =>
+          matchesWhere(row as unknown as Record<string, unknown>, where),
+        );
+        const key = by[0]!;
+        const groups = new Map<string, ExpenseRow[]>();
+
+        for (const row of matched) {
+          const value = String((row as unknown as Record<string, unknown>)[key]);
+          groups.set(value, [...(groups.get(value) ?? []), row]);
+        }
+
+        return Promise.resolve(
+          [...groups.entries()].map(([value, rows]) => ({
+            [key]: value,
+            _sum: { amount: rows.reduce((sum, row) => sum + row.amount, 0) },
+            _count: rows.length,
+          })),
+        );
+      },
+    },
+
+    invoice: {
+      findMany: ({ where, take }: { where?: unknown; take?: number } = {}) =>
+        Promise.resolve(
+          invoices
+            .map(withInvoiceRelations)
+            .filter((row) => matchesWhere(row as unknown as Record<string, unknown>, where))
+            .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+            .slice(0, take ?? undefined),
+        ),
+
+      findUnique: ({ where }: { where: { id: string } }) => {
+        const row = invoices.find((item) => item.id === where.id);
+        return Promise.resolve(row ? withInvoiceRelations(row) : null);
+      },
+
+      create: ({ data }: { data: Partial<InvoiceRow> & { leadId: string } }) => {
+        invoiceCounter += 1;
+        const row: InvoiceRow = {
+          id: randomUUID(),
+          reference: `TDH-INV-${String(invoiceCounter).padStart(5, '0')}`,
+          customerId: '',
+          proposalId: null,
+          status: 'DRAFT',
+          issueDate: new Date(),
+          dueDate: new Date(),
+          packageTitle: '',
+          destination: null,
+          travelStart: null,
+          travelEnd: null,
+          description: null,
+          currency: 'INR',
+          packageAmount: 0,
+          discountAmount: 0,
+          taxRateBps: null,
+          taxAmount: 0,
+          totalAmount: 0,
+          billingName: '',
+          billingAddress: null,
+          billingEmail: null,
+          billingPhone: null,
+          billingTaxId: null,
+          paymentTerms: null,
+          notes: null,
+          pdfPath: null,
+          createdById: null,
+          ...data,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+        invoices.push(row);
+        return Promise.resolve(withInvoiceRelations(row));
+      },
+
+      update: ({ where, data }: { where: { id: string }; data: Partial<InvoiceRow> }) => {
+        const row = invoices.find((item) => item.id === where.id);
+        if (!row) throw new Error('invoice not found');
+        // pdfPath is deliberately settable to null on edit.
+        for (const [key, value] of Object.entries(data)) {
+          if (value !== undefined) (row as unknown as Record<string, unknown>)[key] = value;
+        }
+        row.updatedAt = new Date();
+        return Promise.resolve(withInvoiceRelations(row));
+      },
+    },
+
+    payment: {
+      create: ({ data }: { data: Partial<PaymentRow> & { invoiceId: string; amount: number } }) => {
+        paymentCounter += 1;
+        const row: PaymentRow = {
+          id: randomUUID(),
+          reference: `TDH-PAY-${String(paymentCounter).padStart(5, '0')}`,
+          paidAt: new Date(),
+          method: 'OTHER',
+          externalReference: null,
+          notes: null,
+          recordedById: null,
+          ...data,
+          createdAt: new Date(),
+        };
+        payments.push(row);
+        return Promise.resolve(row);
+      },
+    },
+
+    followUpRule: {
+      findFirst: ({ where }: { where?: unknown } = {}) =>
+        Promise.resolve(
+          followUpRules.find((row) =>
+            matchesWhere(row as unknown as Record<string, unknown>, where),
+          ) ?? null,
+        ),
+
+      findMany: () => Promise.resolve([...followUpRules]),
+
+      findUnique: ({ where }: { where: { id: string } }) =>
+        Promise.resolve(followUpRules.find((row) => row.id === where.id) ?? null),
+
+      create: ({ data }: { data: Partial<FollowUpRuleRow> & { name: string } }) => {
+        const row: FollowUpRuleRow = {
+          id: randomUUID(),
+          offsetDays: [],
+          notifyAssignee: true,
+          graceHours: 24,
+          mandatory: false,
+          escalateAfterMissed: null,
+          isDefault: false,
+          active: true,
+          ...data,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+        followUpRules.push(row);
+        return Promise.resolve(row);
+      },
+
+      update: ({ where, data }: { where: { id: string }; data: Partial<FollowUpRuleRow> }) => {
+        const row = followUpRules.find((item) => item.id === where.id);
+        if (!row) throw new Error('rule not found');
+        Object.assign(row, data, { updatedAt: new Date() });
+        return Promise.resolve(row);
+      },
+
+      updateMany: ({ where, data }: { where: unknown; data: Partial<FollowUpRuleRow> }) => {
+        const matched = followUpRules.filter((row) =>
+          matchesWhere(row as unknown as Record<string, unknown>, where),
+        );
+        for (const row of matched) Object.assign(row, data, { updatedAt: new Date() });
+        return Promise.resolve({ count: matched.length });
+      },
+    },
+
+    followUp: {
+      createMany: ({
+        data,
+        skipDuplicates,
+      }: {
+        data: (Partial<FollowUpRow> & { proposalId: string; sequence: number })[];
+        skipDuplicates?: boolean;
+      }) => {
+        let count = 0;
+        for (const input of data) {
+          const clash = followUps.some(
+            (row) => row.proposalId === input.proposalId && row.sequence === input.sequence,
+          );
+          // Mirrors the (proposalId, sequence) unique constraint, which is what
+          // makes re-submitting a proposal safe.
+          if (clash) {
+            if (skipDuplicates) continue;
+            throw uniqueViolation('follow_ups_proposalId_sequence_key');
+          }
+
+          followUps.push({
+            id: randomUUID(),
+            leadId: '',
+            ruleId: null,
+            dueAt: new Date(),
+            status: 'PENDING',
+            assignedToId: null,
+            completedAt: null,
+            completedById: null,
+            comment: null,
+            contactMethod: null,
+            outcome: null,
+            nextAction: null,
+            ...input,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          });
+          count += 1;
+        }
+        return Promise.resolve({ count });
+      },
+
+      findMany: ({
+        where,
+        orderBy,
+        take,
+      }: {
+        where?: unknown;
+        orderBy?: { dueAt?: 'asc' | 'desc' };
+        take?: number;
+      } = {}) => {
+        const matched = followUps
+          .map(withFollowUpRelations)
+          .filter((row) => matchesWhere(row as unknown as Record<string, unknown>, where))
+          .sort((a, b) =>
+            orderBy?.dueAt === 'desc'
+              ? b.dueAt.getTime() - a.dueAt.getTime()
+              : a.dueAt.getTime() - b.dueAt.getTime(),
+          );
+        return Promise.resolve(matched.slice(0, take ?? undefined));
+      },
+
+      findFirst: ({ where }: { where?: unknown } = {}) => {
+        const matched = followUps
+          .map(withFollowUpRelations)
+          .filter((row) => matchesWhere(row as unknown as Record<string, unknown>, where))
+          .sort((a, b) => a.dueAt.getTime() - b.dueAt.getTime());
+        return Promise.resolve(matched[0] ?? null);
+      },
+
+      findUnique: ({ where }: { where: { id: string } }) => {
+        const row = followUps.find((item) => item.id === where.id);
+        return Promise.resolve(row ? withFollowUpRelations(row) : null);
+      },
+
+      count: ({ where }: { where?: unknown } = {}) =>
+        Promise.resolve(
+          followUps
+            .map(withFollowUpRelations)
+            .filter((row) => matchesWhere(row as unknown as Record<string, unknown>, where)).length,
+        ),
+
+      update: ({ where, data }: { where: { id: string }; data: Partial<FollowUpRow> }) => {
+        const row = followUps.find((item) => item.id === where.id);
+        if (!row) throw new Error('follow-up not found');
+        for (const [key, value] of Object.entries(data)) {
+          if (value !== undefined) (row as unknown as Record<string, unknown>)[key] = value;
+        }
+        row.updatedAt = new Date();
+        return Promise.resolve(withFollowUpRelations(row));
+      },
+
+      updateMany: ({ where, data }: { where: unknown; data: Partial<FollowUpRow> }) => {
+        const matched = followUps.filter((row) =>
+          matchesWhere(row as unknown as Record<string, unknown>, where),
+        );
+        for (const row of matched) Object.assign(row, data, { updatedAt: new Date() });
+        return Promise.resolve({ count: matched.length });
+      },
+    },
+
+    notification: {
+      create: ({ data }: { data: Partial<NotificationRow> & { dedupeKey: string } }) => {
+        // The real unique index is what makes "one email per event" true, so
+        // the stub has to refuse duplicates the same way — with an error the
+        // service will actually recognise.
+        if (notifications.some((row) => row.dedupeKey === data.dedupeKey)) {
+          throw uniqueViolation('notifications_dedupeKey_key');
+        }
+
+        const row: NotificationRow = {
+          id: randomUUID(),
+          type: 'FOLLOW_UP_DUE',
+          status: 'PENDING',
+          recipientId: null,
+          recipientEmail: '',
+          subject: '',
+          body: '',
+          sentAt: null,
+          error: null,
+          ...data,
+          createdAt: new Date(),
+        };
+        notifications.push(row);
+        return Promise.resolve(row);
+      },
+
+      update: ({ where, data }: { where: { id: string }; data: Partial<NotificationRow> }) => {
+        const row = notifications.find((item) => item.id === where.id);
+        if (!row) throw new Error('notification not found');
+        Object.assign(row, data);
+        return Promise.resolve(row);
+      },
+
+      findMany: ({ take }: { take?: number } = {}) =>
+        Promise.resolve(
+          [...notifications]
+            .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+            .slice(0, take ?? undefined),
+        ),
+    },
+
+    smtpSettings: {
+      findUnique: ({ where }: { where: { id: string } }) =>
+        Promise.resolve(smtpSettings.find((row) => row.id === where.id) ?? null),
+
+      upsert: ({
+        where,
+        update,
+        create,
+      }: {
+        where: { id: string };
+        update: Partial<SmtpSettingsRow>;
+        create: Partial<SmtpSettingsRow> & { id: string };
+      }) => {
+        const existing = smtpSettings.find((row) => row.id === where.id);
+        if (existing) {
+          Object.assign(existing, update, { updatedAt: new Date() });
+          return Promise.resolve(existing);
+        }
+
+        const row = {
+          security: 'STARTTLS',
+          active: true,
+          ...create,
+          updatedAt: new Date(),
+        } as SmtpSettingsRow;
+        smtpSettings.push(row);
+        return Promise.resolve(row);
+      },
+    },
+
     integrationToken: {
       findUnique: ({ where }: { where: { provider: string } }) =>
         Promise.resolve(integrationTokens.find((row) => row.provider === where.provider) ?? null),
@@ -483,6 +1741,115 @@ export function createPrismaStub() {
       },
     },
   };
+
+  function withExpenseRelations(row: ExpenseRow) {
+    return {
+      ...row,
+      category: expenseCategories.find((item) => item.id === row.categoryId) ?? null,
+      paidBy: users.find((item) => item.id === row.paidById) ?? null,
+      createdBy: users.find((item) => item.id === row.createdById) ?? null,
+    };
+  }
+
+  function withInvoiceRelations(row: InvoiceRow) {
+    return {
+      ...row,
+      lead: leads.find((item) => item.id === row.leadId) ?? null,
+      customer: customers.find((item) => item.id === row.customerId) ?? null,
+      proposal: proposals.find((item) => item.id === row.proposalId) ?? null,
+      createdBy: users.find((item) => item.id === row.createdById) ?? null,
+      payments: payments
+        .filter((item) => item.invoiceId === row.id)
+        .sort((a, b) => a.paidAt.getTime() - b.paidAt.getTime())
+        .map((payment) => ({
+          ...payment,
+          recordedBy: users.find((item) => item.id === payment.recordedById) ?? null,
+        })),
+    };
+  }
+
+  function withFollowUpRelations(row: FollowUpRow) {
+    const lead = leads.find((item) => item.id === row.leadId);
+    const proposal = proposals.find((item) => item.id === row.proposalId);
+    return {
+      ...row,
+      assignedTo: users.find((item) => item.id === row.assignedToId) ?? null,
+      completedBy: users.find((item) => item.id === row.completedById) ?? null,
+      lead: lead
+        ? { ...lead, customer: customers.find((item) => item.id === lead.customerId) ?? null }
+        : null,
+      proposal: proposal
+        ? {
+            ...proposal,
+            versions: proposalVersions
+              .filter((item) => item.proposalId === proposal.id)
+              .sort((a, b) => b.version - a.version)
+              .slice(0, 1),
+          }
+        : null,
+    };
+  }
+
+  function addVersion(
+    proposalId: string,
+    input: Partial<ProposalVersionRow> & { version: number },
+  ): void {
+    proposalVersions.push({
+      id: randomUUID(),
+      proposalId,
+      title: '',
+      destination: null,
+      travelStart: null,
+      travelEnd: null,
+      adults: null,
+      children: null,
+      executiveSummary: null,
+      itinerary: null,
+      inclusions: null,
+      exclusions: null,
+      hotelInfo: null,
+      transportInfo: null,
+      activities: null,
+      terms: null,
+      validUntil: new Date(),
+      currency: 'INR',
+      sellingPrice: 0,
+      actualCost: 0,
+      pdfPath: null,
+      createdById: null,
+      ...input,
+      createdAt: new Date(),
+    });
+  }
+
+  function withProposalRelations(row: ProposalRow) {
+    const lead = leads.find((item) => item.id === row.leadId);
+    return {
+      ...row,
+      lead: lead
+        ? { ...lead, customer: customers.find((item) => item.id === lead.customerId) ?? null }
+        : null,
+      createdBy: users.find((item) => item.id === row.createdById) ?? null,
+      submittedBy: users.find((item) => item.id === row.submittedById) ?? null,
+      // Newest first, matching the `orderBy: { version: 'desc' }` in the include.
+      versions: proposalVersions
+        .filter((item) => item.proposalId === row.id)
+        .sort((a, b) => b.version - a.version)
+        .map((version) => ({
+          ...version,
+          createdBy: users.find((item) => item.id === version.createdById) ?? null,
+        })),
+    };
+  }
+
+  function withLeadRelations(row: LeadRow) {
+    return {
+      ...row,
+      customer: customers.find((item) => item.id === row.customerId) ?? null,
+      assignedTo: users.find((item) => item.id === row.assignedToId) ?? null,
+      createdBy: users.find((item) => item.id === row.createdById) ?? null,
+    };
+  }
 
   function withQuoteItems(row: QuoteRow) {
     return {

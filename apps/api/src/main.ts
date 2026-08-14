@@ -7,7 +7,6 @@ import cookieParser from 'cookie-parser';
 
 import { AppModule } from './app.module';
 import type { Env } from './config/env';
-import { AllExceptionsFilter } from './shared/all-exceptions.filter';
 
 async function bootstrap(): Promise<void> {
   // rawBody is required to verify Meta's X-Hub-Signature-256 on webhooks.
@@ -22,7 +21,9 @@ async function bootstrap(): Promise<void> {
   app.use(cookieParser());
   app.setGlobalPrefix('api');
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
-  app.useGlobalFilters(new AllExceptionsFilter());
+  // The exception filter is registered in AppModule via APP_FILTER so it can
+  // be given the audit recorder; registering it here as well would run it
+  // twice and double every entry it writes.
   app.enableShutdownHooks();
 
   app.enableCors({
