@@ -467,6 +467,56 @@ async function main(): Promise<void> {
     .set('Cookie', admin)
     .expect(404);
 
+  // --- the payment ledger ----------------------------------------------------
+  const ledger = await request(http).get(`${base}/payments`).set('Cookie', admin).expect(200);
+  const entries = ledger.body as {
+    reference: string;
+    amount: number;
+    invoiceReference: string;
+    invoiceTotal: number;
+    customerName: string;
+    currency: string;
+    leadId: string;
+  }[];
+
+  assert.ok(entries.length >= 2, 'both receipts are in the ledger');
+  assert.ok(
+    entries.every((entry) => entry.invoiceReference && entry.customerName && entry.leadId),
+    'every row carries enough of the invoice to be readable on its own',
+  );
+  // The §49 receipts, read back through the ledger rather than the invoice.
+  // (Later cases in this file record more payments, so this checks for the two
+  // rather than totalling everything.)
+  assert.ok(
+    entries.some((entry) => entry.amount === 50_000),
+    'the 50,000 receipt is in the ledger',
+  );
+  assert.ok(
+    entries.some((entry) => entry.amount === 25_000),
+    'and so is the 25,000 one',
+  );
+
+  const byMethod = await request(http)
+    .get(`${base}/payments`)
+    .query({ method: 'BANK_TRANSFER' })
+    .set('Cookie', admin)
+    .expect(200);
+  assert.ok((byMethod.body as unknown[]).length >= 1);
+
+  // Scoped like the invoices themselves. This fixture's leads belong to the
+  // employee, so what is asserted is the rule rather than an empty list: every
+  // row they get back is against a lead they can actually open.
+  const employeeLedger = await request(http)
+    .get(`${base}/payments`)
+    .set('Cookie', employee)
+    .expect(200);
+  const employeeEntries = employeeLedger.body as { leadId: string }[];
+
+  assert.ok(employeeEntries.length <= entries.length);
+  for (const entry of employeeEntries) {
+    await request(http).get(`${base}/leads/${entry.leadId}`).set('Cookie', employee).expect(200);
+  }
+
   await app.close();
   console.log('All invoice smoke checks passed.');
 }

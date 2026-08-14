@@ -384,6 +384,26 @@ export const proposalStatusSchema = z.object({
 
 export type ProposalStatusRequest = z.infer<typeof proposalStatusSchema>;
 
+/** Filters for the proposals list. */
+export const proposalQuerySchema = z.object({
+  status: z.enum(PROPOSAL_STATUSES).optional(),
+  leadId: z.preprocess(blankToNull, z.string().uuid().nullable()).optional(),
+  search: optionalText(120),
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+});
+
+export type ProposalQuery = z.infer<typeof proposalQuerySchema>;
+
+/** Filters for the customer book. */
+export const customerQuerySchema = z.object({
+  search: optionalText(120),
+  /** Only customers with more than one lead on file. */
+  repeatOnly: z.coerce.boolean().optional(),
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+});
+
+export type CustomerQuery = z.infer<typeof customerQuerySchema>;
+
 /**
  * How money moved, either in or out. Shared by payments against an invoice and
  * by company expenses — declared here because both sections below use it.
@@ -629,6 +649,18 @@ export const invoiceQuerySchema = z.object({
 });
 
 export type InvoiceQuery = z.infer<typeof invoiceQuerySchema>;
+
+/** Filters for the payments ledger. Declared here because it needs the methods. */
+export const paymentQuerySchema = z.object({
+  from: optionalDate('From'),
+  to: optionalDate('To'),
+  method: z.enum(PAYMENT_METHODS).optional(),
+  invoiceId: z.preprocess(blankToNull, z.string().uuid().nullable()).optional(),
+  search: optionalText(120),
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+});
+
+export type PaymentQuery = z.infer<typeof paymentQuerySchema>;
 
 // --- Follow-ups ------------------------------------------------------------
 

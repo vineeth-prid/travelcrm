@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import type { ProposalStatus } from '@prisma/client';
-import type { ProposalRequest } from '@travel-crm/sdk';
+import type { Prisma, ProposalStatus } from '@prisma/client';
+import type { ProposalQuery, ProposalRequest } from '@travel-crm/sdk';
 
 import { fromDateOnly } from '../leads/leads.mappers';
 import { PrismaService } from '../shared/prisma.service';
@@ -33,6 +33,31 @@ function versionData(input: ProposalRequest) {
 @Injectable()
 export class ProposalsRepository {
   constructor(private readonly prisma: PrismaService) {}
+
+  /** Every proposal an actor may see, newest first. */
+  search(query: ProposalQuery, scope: Prisma.ProposalWhereInput): Promise<ProposalWithRelations[]> {
+    const and: Prisma.ProposalWhereInput[] = [scope];
+
+    if (query.status) and.push({ status: query.status });
+    if (query.leadId) and.push({ leadId: query.leadId });
+    if (query.search) {
+      and.push({
+        OR: [
+          { reference: { contains: query.search, mode: 'insensitive' } },
+          { lead: { reference: { contains: query.search, mode: 'insensitive' } } },
+          { lead: { customer: { name: { contains: query.search, mode: 'insensitive' } } } },
+          { versions: { some: { title: { contains: query.search, mode: 'insensitive' } } } },
+        ],
+      });
+    }
+
+    return this.prisma.proposal.findMany({
+      where: { AND: and },
+      include: proposalInclude,
+      orderBy: { createdAt: 'desc' },
+      take: query.limit ?? 200,
+    });
+  }
 
   findForLead(leadId: string): Promise<ProposalWithRelations[]> {
     return this.prisma.proposal.findMany({

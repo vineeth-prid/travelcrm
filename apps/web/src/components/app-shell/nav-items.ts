@@ -43,7 +43,7 @@ export const navSections: NavSection[] = [
     label: 'CRM',
     items: [
       { label: 'Leads', href: '/leads', icon: Users },
-      { label: 'Customers', href: '/customers', icon: UserSquare2, soon: true },
+      { label: 'Customers', href: '/customers', icon: UserSquare2 },
       { label: 'Follow-ups', href: '/follow-ups', icon: CalendarClock },
       { label: 'Inbox', href: '/inbox', icon: Inbox },
     ],
@@ -51,11 +51,11 @@ export const navSections: NavSection[] = [
   {
     label: 'Sales',
     items: [
-      // Proposals live on their lead; there is no useful list of them yet, so
-      // the entry stays hidden rather than pointing at an empty page.
-      { label: 'Proposals', href: '/proposals', icon: FileText, soon: true },
+      // Proposals are created on a lead, but they are listed here across every
+      // lead — "what is out with a customer right now" is its own question.
+      { label: 'Proposals', href: '/proposals', icon: FileText },
       { label: 'Invoices', href: '/invoices', icon: Receipt },
-      { label: 'Payments', href: '/payments', icon: CreditCard, soon: true },
+      { label: 'Payments', href: '/payments', icon: CreditCard },
     ],
   },
   {

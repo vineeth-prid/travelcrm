@@ -351,6 +351,34 @@ function compare(actual: unknown, condition: Record<string, unknown>): boolean {
   return true;
 }
 
+export type OrderBy = 'asc' | 'desc' | { sort: 'asc' | 'desc'; nulls?: 'first' | 'last' };
+
+/**
+ * Columns Prisma will **not** accept `nulls:` on, because they are required.
+ *
+ * The real engine throws `PrismaClientValidationError` for
+ * `orderBy: { createdAt: { sort, nulls } }`, and a stub that quietly accepted
+ * it let exactly that ship: the leads list 500'd on its default sort while
+ * every test passed. Prisma's own types express this; this is the runtime half.
+ */
+const NON_NULLABLE_LEAD_COLUMNS = new Set(['createdAt', 'updatedAt', 'lastActivityAt', 'stage']);
+
+/** Reads an orderBy the way Prisma does, and refuses what Prisma refuses. */
+export function readOrderBy(
+  orderBy: Record<string, OrderBy> | undefined,
+  nonNullable: Set<string>,
+): [string, 'asc' | 'desc'] {
+  const [field, value] = Object.entries(orderBy ?? {})[0] ?? ['createdAt', 'desc' as const];
+
+  if (typeof value === 'object' && value.nulls !== undefined && nonNullable.has(field)) {
+    throw new Error(
+      `Prisma would reject this: \`nulls\` is only valid on a nullable column, and "${field}" is required.`,
+    );
+  }
+
+  return [field, typeof value === 'object' ? value.sort : value];
+}
+
 export function matchesWhere(row: Record<string, unknown>, where: unknown): boolean {
   if (!where || typeof where !== 'object') return true;
 
@@ -377,8 +405,21 @@ export function matchesWhere(row: Record<string, unknown>, where: unknown): bool
       continue;
     }
 
-    // A plain object here is a relation filter, e.g. `customer: { name: ... }`.
+    // A plain object here is a relation filter, e.g. `customer: { name: ... }`
+    // — or, on a list relation, `versions: { some: { … } }`.
     if (typeof condition === 'object' && condition !== null && !(condition instanceof Date)) {
+      const clause = condition as Record<string, unknown>;
+
+      if (Array.isArray(actual) && ('some' in clause || 'every' in clause || 'none' in clause)) {
+        const rows = actual as Record<string, unknown>[];
+        if ('some' in clause && !rows.some((item) => matchesWhere(item, clause.some))) return false;
+        if ('every' in clause && !rows.every((item) => matchesWhere(item, clause.every))) {
+          return false;
+        }
+        if ('none' in clause && rows.some((item) => matchesWhere(item, clause.none))) return false;
+        continue;
+      }
+
       if (!actual || typeof actual !== 'object') return false;
       if (!matchesWhere(actual as Record<string, unknown>, condition)) return false;
       continue;
@@ -984,18 +1025,43 @@ export function createPrismaStub() {
         return Promise.resolve(row);
       },
 
-      findMany: ({ where, take }: { where?: unknown; take?: number } = {}) => {
+      /**
+       * Serves both duplicate detection and the customer book. Relations are
+       * attached before filtering so `where: { leads: { some: … } }` works, and
+       * the include's own `where` is honoured because that is what scopes a
+       * customer's lead count to the leads the viewer may see.
+       */
+      findMany: ({
+        where,
+        include,
+        take,
+      }: {
+        where?: unknown;
+        include?: { leads?: { where?: unknown } };
+        take?: number;
+      } = {}) => {
+        const scope = include?.leads?.where;
+
         const matched = customers
+          .map((row) => withCustomerRelations(row, scope))
           .filter((row) => matchesWhere(row as unknown as Record<string, unknown>, where))
-          .slice(0, take ?? undefined)
-          .map((row) => ({
-            ...row,
-            leads: leads
-              .filter((lead) => lead.customerId === row.id)
-              .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
-              .map((lead) => ({ reference: lead.reference, stage: lead.stage })),
-          }));
+          .slice(0, take ?? undefined);
+
         return Promise.resolve(matched);
+      },
+
+      findFirst: ({
+        where,
+        include,
+      }: {
+        where?: unknown;
+        include?: { leads?: { where?: unknown } };
+      } = {}) => {
+        const row = customers
+          .map((item) => withCustomerRelations(item, include?.leads?.where))
+          .find((item) => matchesWhere(item as unknown as Record<string, unknown>, where));
+
+        return Promise.resolve(row ?? null);
       },
     },
 
@@ -1007,7 +1073,7 @@ export function createPrismaStub() {
         take,
       }: {
         where?: unknown;
-        orderBy?: Record<string, { sort: 'asc' | 'desc'; nulls?: 'first' | 'last' }>;
+        orderBy?: Record<string, OrderBy>;
         skip?: number;
         take?: number;
       } = {}) => {
@@ -1015,7 +1081,7 @@ export function createPrismaStub() {
           .map(withLeadRelations)
           .filter((row) => matchesWhere(row as unknown as Record<string, unknown>, where));
 
-        const [field, order] = Object.entries(orderBy ?? {})[0] ?? ['createdAt', { sort: 'desc' }];
+        const [field, order] = readOrderBy(orderBy, NON_NULLABLE_LEAD_COLUMNS);
         const sorted = [...matched].sort((a, b) => {
           const left = (a as unknown as Record<string, unknown>)[field];
           const right = (b as unknown as Record<string, unknown>)[field];
@@ -1028,7 +1094,7 @@ export function createPrismaStub() {
           const l = value(left) as number | string;
           const r = value(right) as number | string;
           const direction = l < r ? -1 : l > r ? 1 : 0;
-          return order.sort === 'desc' ? -direction : direction;
+          return order === 'desc' ? -direction : direction;
         });
 
         const from = skip ?? 0;
@@ -1126,15 +1192,17 @@ export function createPrismaStub() {
         return Promise.resolve({ count: matched.length });
       },
 
-      // Handles both the lead's proposal list and the scheduler's expiry
-      // sweep, which filters on status rather than lead.
-      findMany: ({ where }: { where?: unknown } = {}) =>
-        Promise.resolve(
-          proposals
-            .filter((row) => matchesWhere(row as unknown as Record<string, unknown>, where))
-            .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
-            .map(withProposalRelations),
-        ),
+      // Handles the lead's proposal list, the workspace list (which filters
+      // through the lead relation) and the scheduler's expiry sweep. Relations
+      // are attached *before* filtering, so `where: { lead: … }` can match.
+      findMany: ({ where, take }: { where?: unknown; take?: number } = {}) => {
+        const matched = proposals
+          .map(withProposalRelations)
+          .filter((row) => matchesWhere(row as unknown as Record<string, unknown>, where))
+          .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+        return Promise.resolve(take === undefined ? matched : matched.slice(0, take));
+      },
 
       findUnique: ({ where }: { where: { id: string } }) => {
         const row = proposals.find((item) => item.id === where.id);
@@ -1485,6 +1553,29 @@ export function createPrismaStub() {
         payments.push(row);
         return Promise.resolve(row);
       },
+
+      /** The ledger. Relations first, so `where: { invoice: … }` can match. */
+      findMany: ({ where, take }: { where?: unknown; take?: number } = {}) => {
+        const matched = payments
+          .map((row) => ({
+            ...row,
+            recordedBy: users.find((item) => item.id === row.recordedById) ?? null,
+            invoice: invoices.find((item) => item.id === row.invoiceId) ?? null,
+          }))
+          .map((row) => ({
+            ...row,
+            invoice: row.invoice
+              ? {
+                  ...row.invoice,
+                  lead: leads.find((item) => item.id === row.invoice!.leadId) ?? null,
+                }
+              : null,
+          }))
+          .filter((row) => matchesWhere(row as unknown as Record<string, unknown>, where))
+          .sort((a, b) => b.paidAt.getTime() - a.paidAt.getTime());
+
+        return Promise.resolve(take === undefined ? matched : matched.slice(0, take));
+      },
     },
 
     followUpRule: {
@@ -1820,6 +1911,37 @@ export function createPrismaStub() {
       ...input,
       createdAt: new Date(),
     });
+  }
+
+  /**
+   * A customer with the leads and invoices the book reads. `scope` is the
+   * include's own `where`, so an employee's lead count covers their leads only.
+   */
+  function withCustomerRelations(row: CustomerRow, scope?: unknown) {
+    const theirLeads = leads
+      .filter((lead) => lead.customerId === row.id)
+      .filter((lead) =>
+        scope === undefined
+          ? true
+          : matchesWhere(withLeadRelations(lead) as unknown as Record<string, unknown>, scope),
+      )
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .map((lead) => ({
+        ...lead,
+        assignedTo: users.find((item) => item.id === lead.assignedToId) ?? null,
+      }));
+
+    return {
+      ...row,
+      leads: theirLeads,
+      invoices: invoices
+        .filter((invoice) => invoice.customerId === row.id)
+        .sort((a, b) => b.issueDate.getTime() - a.issueDate.getTime())
+        .map((invoice) => ({
+          ...invoice,
+          payments: payments.filter((payment) => payment.invoiceId === invoice.id),
+        })),
+    };
   }
 
   function withProposalRelations(row: ProposalRow) {

@@ -529,6 +529,43 @@ async function main(): Promise<void> {
     .set('Cookie', admin)
     .expect(404);
 
+  // --- the list across every lead -------------------------------------------
+  const all = await request(http).get(`${base}/proposals`).set('Cookie', admin).expect(200);
+  assert.ok((all.body as unknown[]).length >= 2, 'every proposal, not just one lead’s');
+  assert.ok(
+    (all.body as { reference: string }[]).some((row) => row.reference === created.body.reference),
+  );
+
+  const drafts = await request(http)
+    .get(`${base}/proposals`)
+    .query({ status: 'DRAFT' })
+    .set('Cookie', admin)
+    .expect(200);
+  assert.ok(
+    (drafts.body as { status: string }[]).every((row) => row.status === 'DRAFT'),
+    'the status filter filters',
+  );
+
+  const searched = await request(http)
+    .get(`${base}/proposals`)
+    .query({ search: created.body.reference })
+    .set('Cookie', admin)
+    .expect(200);
+  assert.equal((searched.body as unknown[]).length, 1, 'searching by reference finds exactly it');
+
+  // The list obeys the same financial rule as everything else: an employee
+  // without permission gets no margin, on any row.
+  const employeeList = await request(http)
+    .get(`${base}/proposals`)
+    .set('Cookie', employee)
+    .expect(200);
+  assert.ok(
+    (employeeList.body as { currentVersion: { financials: unknown } }[]).every(
+      (row) => row.currentVersion.financials === null,
+    ),
+    'an employee without permission sees no cost or margin in the list',
+  );
+
   await app.close();
   console.log('All proposal smoke checks passed.');
 }

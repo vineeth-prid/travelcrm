@@ -1,6 +1,7 @@
 import type {
   AiRequirementRequest,
   ChangePasswordRequest,
+  CustomerQuery,
   CreateUserRequest,
   ExtractedDetails,
   ResetPasswordRequest,
@@ -25,6 +26,8 @@ import type {
   LeadRequest,
   LeadStageRequest,
   LoginRequest,
+  PaymentQuery,
+  ProposalQuery,
   ProposalRequest,
   ProposalStatusRequest,
   QuoteRequest,
@@ -39,6 +42,8 @@ import type {
   AuditEntry,
   Exportable,
   Conversation,
+  CustomerDetail,
+  CustomerSummary,
   ConversationSummary,
   Dashboard,
   DuplicateCheck,
@@ -59,6 +64,7 @@ import type {
   LoginResponse,
   Message,
   MessageResponse,
+  PaymentEntry,
   Proposal,
   ProposalWithHistory,
   ProposalWithPdf,
@@ -211,7 +217,18 @@ export class ApiClient {
     ) => this.request<DuplicateCheck>(`/leads/duplicates${toQuery(params)}`, { signal }),
   };
 
+  /** The customer book. Read-only — customers are created by their lead. */
+  readonly customers = {
+    list: (query: CustomerQuery = {}, signal?: AbortSignal) =>
+      this.request<CustomerSummary[]>(`/customers${toQuery(query)}`, { signal }),
+    get: (id: string, signal?: AbortSignal) =>
+      this.request<CustomerDetail>(`/customers/${id}`, { signal }),
+  };
+
   readonly proposals = {
+    /** Across every lead, for the proposals workspace. */
+    list: (query: ProposalQuery = {}, signal?: AbortSignal) =>
+      this.request<Proposal[]>(`/proposals${toQuery(query)}`, { signal }),
     listFor: (leadId: string, signal?: AbortSignal) =>
       this.request<Proposal[]>(`/leads/${leadId}/proposals`, { signal }),
     /** The proposal with every version it has been through. */
@@ -315,6 +332,12 @@ export class ApiClient {
       this.request<InvoiceWithPdf>(`/invoices/${id}/generate`, { method: 'POST' }),
     recordPayment: (id: string, input: PaymentRequest) =>
       this.request<Invoice>(`/invoices/${id}/payments`, { method: 'POST', body: input }),
+  };
+
+  /** The payment ledger: receipts across every invoice. */
+  readonly payments = {
+    list: (query: PaymentQuery = {}, signal?: AbortSignal) =>
+      this.request<PaymentEntry[]>(`/payments${toQuery(query)}`, { signal }),
   };
 
   readonly followUps = {

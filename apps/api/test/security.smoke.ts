@@ -49,8 +49,12 @@ const AUTHENTICATED: [method: 'get' | 'post', path: string][] = [
   ['get', '/leads'],
   ['get', '/follow-ups'],
   ['get', '/invoices'],
+  ['get', '/payments'],
+  ['get', '/proposals'],
+  ['get', '/customers'],
   ['get', '/reports/performance'],
   ['get', '/ai/status'],
+  ['get', '/settings/app-info'],
 ];
 
 async function main(): Promise<void> {
@@ -365,7 +369,17 @@ async function main(): Promise<void> {
   const hash = prisma.users[0]!.password;
   assert.ok(hash.startsWith('$2'), 'the fixture must really hold a bcrypt hash');
 
-  for (const path of ['/users', '/leads', '/invoices', '/expenses', '/follow-ups', '/staff']) {
+  for (const path of [
+    '/users',
+    '/leads',
+    '/invoices',
+    '/payments',
+    '/proposals',
+    '/customers',
+    '/expenses',
+    '/follow-ups',
+    '/staff',
+  ]) {
     const response = await request(http).get(`${base}${path}`).set('Cookie', admin).expect(200);
     const body = JSON.stringify(response.body);
 

@@ -7,6 +7,8 @@ import {
   type InvoiceQuery,
   type InvoiceRequest,
   type InvoiceWithPdf,
+  type PaymentEntry,
+  type PaymentQuery,
   type PaymentRequest,
 } from '@travel-crm/sdk';
 
@@ -18,11 +20,13 @@ import { LeadsRepository } from '../leads/leads.repository';
 import { money } from '../shared/pdf-brand';
 import { PrismaService } from '../shared/prisma.service';
 import { StorageService } from '../storage/storage.service';
+import { userSummarySelect } from '../users/users.service';
 import { InvoicePdfService, type CustomerInvoicePdfData } from './invoice-pdf.service';
 import {
   amountPaidOn,
   invoiceInclude,
   toInvoice,
+  toPayment,
   type InvoiceWithRelations,
 } from './invoices.mappers';
 
@@ -78,6 +82,61 @@ export class InvoicesService {
 
   async get(id: string, actor: AuthenticatedUser): Promise<Invoice> {
     return toInvoice(await this.findVisible(id, actor));
+  }
+
+  /**
+   * The payment ledger. Scoped through the invoice's lead, so an employee sees
+   * receipts against their own work and nobody else's — the same rule as the
+   * invoices themselves, applied one level down.
+   */
+  async listPayments(query: PaymentQuery, actor: AuthenticatedUser): Promise<PaymentEntry[]> {
+    const and: Prisma.PaymentWhereInput[] = [{ invoice: this.scopeFor(actor) }];
+
+    if (query.invoiceId) and.push({ invoiceId: query.invoiceId });
+    if (query.method) and.push({ method: query.method });
+    if (query.from) and.push({ paidAt: { gte: fromDateOnly(query.from)! } });
+    if (query.to) {
+      const end = fromDateOnly(query.to)!;
+      end.setUTCDate(end.getUTCDate() + 1);
+      and.push({ paidAt: { lt: end } });
+    }
+    if (query.search) {
+      and.push({
+        OR: [
+          { reference: { contains: query.search, mode: 'insensitive' } },
+          { externalReference: { contains: query.search, mode: 'insensitive' } },
+          { invoice: { reference: { contains: query.search, mode: 'insensitive' } } },
+          { invoice: { billingName: { contains: query.search, mode: 'insensitive' } } },
+        ],
+      });
+    }
+
+    const rows = await this.prisma.payment.findMany({
+      where: { AND: and },
+      include: {
+        recordedBy: { select: userSummarySelect },
+        invoice: {
+          select: {
+            reference: true,
+            totalAmount: true,
+            currency: true,
+            billingName: true,
+            leadId: true,
+          },
+        },
+      },
+      orderBy: { paidAt: 'desc' },
+      take: query.limit ?? 200,
+    });
+
+    return rows.map((row) => ({
+      ...toPayment(row),
+      invoiceReference: row.invoice.reference,
+      invoiceTotal: row.invoice.totalAmount,
+      currency: row.invoice.currency,
+      customerName: row.invoice.billingName,
+      leadId: row.invoice.leadId,
+    }));
   }
 
   /**

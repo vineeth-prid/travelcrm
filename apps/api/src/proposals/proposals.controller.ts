@@ -8,13 +8,16 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
+  proposalQuerySchema,
   proposalSchema,
   proposalStatusSchema,
   type Proposal,
+  type ProposalQuery,
   type ProposalRequest,
   type ProposalStatusRequest,
   type ProposalWithHistory,
@@ -40,6 +43,21 @@ import {
 @Controller({ version: '1' })
 export class ProposalsController {
   constructor(private readonly proposals: ProposalsService) {}
+
+  /**
+   * Every proposal, across every lead. Declared before the `:id` routes so
+   * "proposals" is never read as an id, and scoped exactly like leads —
+   * an employee sees proposals on their own work.
+   */
+  @Get('proposals')
+  @ApiOperation({ summary: 'Proposals across every lead, newest first' })
+  @ApiZodResponse(HttpStatus.OK, proposalListSchema, 'Proposals')
+  list(
+    @Query(new ZodValidationPipe(proposalQuerySchema)) query: ProposalQuery,
+    @CurrentUser() current: AuthenticatedUser,
+  ): Promise<Proposal[]> {
+    return this.proposals.list(query, current);
+  }
 
   @Get('leads/:leadId/proposals')
   @ApiOperation({ summary: 'Every proposal on a lead, newest first' })

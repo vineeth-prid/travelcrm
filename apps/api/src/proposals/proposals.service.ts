@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import {
   LOCKED_PROPOSAL_STATUSES,
   type Proposal,
+  type ProposalQuery,
   type ProposalRequest,
   type ProposalStatusRequest,
   type ProposalWithHistory,
@@ -11,7 +12,7 @@ import {
 import type { AuthenticatedUser } from '../auth/jwt.strategy';
 import { LeadActivityService } from '../leads/lead-activity.service';
 import { FollowUpsService } from '../follow-ups/follow-ups.service';
-import { LeadsRepository } from '../leads/leads.repository';
+import { LeadsRepository, scopeFor as leadScopeFor } from '../leads/leads.repository';
 import { StorageService } from '../storage/storage.service';
 import { ProposalPdfService, type CustomerProposalPdfData } from './proposal-pdf.service';
 import {
@@ -40,6 +41,20 @@ export class ProposalsService {
     private readonly pdf: ProposalPdfService,
     private readonly storage: StorageService,
   ) {}
+
+  /**
+   * Every proposal the actor may see.
+   *
+   * Financial visibility is decided per row against that proposal's lead, not
+   * once for the list: an employee with the permission sees margin on their own
+   * proposals and `null` on any that reached them another way.
+   */
+  async list(query: ProposalQuery, actor: AuthenticatedUser): Promise<Proposal[]> {
+    // The scope is the lead's, one relation up: a proposal is visible exactly
+    // when the lead behind it is.
+    const rows = await this.repository.search(query, { lead: leadScopeFor(actor) });
+    return rows.map((row) => toProposal(row, canSeeFinancials(actor, row.lead)));
+  }
 
   async listForLead(leadId: string, actor: AuthenticatedUser): Promise<Proposal[]> {
     const lead = await this.visibleLead(leadId, actor);

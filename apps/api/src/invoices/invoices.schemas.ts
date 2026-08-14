@@ -71,6 +71,17 @@ export const invoiceResponseSchema = z.object({
 
 export const invoiceListSchema = z.array(invoiceResponseSchema);
 
+/** A payment as the ledger lists it — the receipt plus who it was for. */
+export const paymentEntrySchema = paymentResponseSchema.extend({
+  invoiceReference: z.string(),
+  invoiceTotal: z.number().int(),
+  currency: z.string(),
+  customerName: z.string(),
+  leadId: z.string().uuid(),
+});
+
+export const paymentEntryListSchema = z.array(paymentEntrySchema);
+
 export const invoiceWithPdfSchema = z.object({
   invoice: invoiceResponseSchema,
   pdfUrl: z.string().nullable(),

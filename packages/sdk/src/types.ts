@@ -209,6 +209,45 @@ export interface Customer {
   updatedAt: string;
 }
 
+/**
+ * A customer as the customer book shows them: the record plus what the agency
+ * has actually done with them. `leadCount > 1` is the whole point of the page —
+ * a repeat customer is worth knowing about before you quote them again.
+ */
+export interface CustomerSummary extends Customer {
+  leadCount: number;
+  wonCount: number;
+  /** Total invoiced, cancelled invoices excluded, in `currency`. */
+  invoicedAmount: number;
+  collectedAmount: number;
+  currency: string;
+  /** ISO timestamp of the most recent lead, or null if somehow none. */
+  lastLeadAt: string | null;
+  destinations: string[];
+}
+
+/** One customer with the trail behind them. */
+export interface CustomerDetail {
+  customer: CustomerSummary;
+  leads: {
+    id: string;
+    reference: string;
+    destination: string | null;
+    stage: LeadStage;
+    createdAt: string;
+    assignedTo: UserSummary | null;
+  }[];
+  invoices: {
+    id: string;
+    reference: string;
+    status: InvoiceStatus;
+    currency: string;
+    totalAmount: number;
+    amountPaid: number;
+    issueDate: string;
+  }[];
+}
+
 export interface Lead {
   id: string;
   /** Human-facing identifier, e.g. "TDH-L-00042". */
@@ -735,6 +774,18 @@ export interface Payment {
   notes: string | null;
   recordedBy: UserSummary | null;
   createdAt: string;
+}
+
+/**
+ * A payment as the ledger lists it: the receipt, plus enough of the invoice
+ * and the customer to be readable without opening anything.
+ */
+export interface PaymentEntry extends Payment {
+  invoiceReference: string;
+  invoiceTotal: number;
+  currency: string;
+  customerName: string;
+  leadId: string;
 }
 
 export interface Invoice {

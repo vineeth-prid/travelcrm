@@ -13,12 +13,15 @@ import {
 import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   invoiceQuerySchema,
+  paymentQuerySchema,
   invoiceSchema,
   paymentSchema,
   type Invoice,
   type InvoiceQuery,
   type InvoiceRequest,
   type InvoiceWithPdf,
+  type PaymentEntry,
+  type PaymentQuery,
   type PaymentRequest,
 } from '@travel-crm/sdk';
 
@@ -28,7 +31,12 @@ import type { AuthenticatedUser } from '../auth/jwt.strategy';
 import { RolesGuard } from '../auth/roles.guard';
 import { ApiZodBody, ApiZodResponse, ZodValidationPipe } from '../shared/zod';
 import { InvoicesService } from './invoices.service';
-import { invoiceListSchema, invoiceResponseSchema, invoiceWithPdfSchema } from './invoices.schemas';
+import {
+  invoiceListSchema,
+  invoiceResponseSchema,
+  invoiceWithPdfSchema,
+  paymentEntryListSchema,
+} from './invoices.schemas';
 
 @ApiTags('invoices')
 @ApiCookieAuth()
@@ -45,6 +53,20 @@ export class InvoicesController {
     @CurrentUser() current: AuthenticatedUser,
   ): Promise<Invoice[]> {
     return this.invoices.list(query, current);
+  }
+
+  /**
+   * The payment ledger: receipts across every invoice, rather than one invoice
+   * at a time. Scoped exactly like the invoices they belong to.
+   */
+  @Get('payments')
+  @ApiOperation({ summary: 'Payments received. An employee only sees their own leads.' })
+  @ApiZodResponse(HttpStatus.OK, paymentEntryListSchema, 'Payments, newest first')
+  payments(
+    @Query(new ZodValidationPipe(paymentQuerySchema)) query: PaymentQuery,
+    @CurrentUser() current: AuthenticatedUser,
+  ): Promise<PaymentEntry[]> {
+    return this.invoices.listPayments(query, current);
   }
 
   @Get('invoices/:id')

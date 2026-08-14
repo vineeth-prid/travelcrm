@@ -81,6 +81,26 @@ function filtersFrom(query: LeadQuery): Prisma.LeadWhereInput[] {
   return where;
 }
 
+/**
+ * How each sortable column is ordered.
+ *
+ * Written out per column rather than built from a computed key, because
+ * `nulls: 'last'` is only legal on a **nullable** column — Prisma rejects it
+ * at runtime on `createdAt`, and a computed key hides that from the compiler.
+ * With the map, `tsc` refuses the invalid combination.
+ */
+const ORDER_BY: Record<
+  NonNullable<LeadQuery['sort']>,
+  (direction: Prisma.SortOrder) => Prisma.LeadOrderByWithRelationInput
+> = {
+  createdAt: (direction) => ({ createdAt: direction }),
+  lastActivityAt: (direction) => ({ lastActivityAt: direction }),
+  // Nullable, and a lead with no date should never displace one that has a
+  // real date to act on.
+  nextFollowUpAt: (direction) => ({ nextFollowUpAt: { sort: direction, nulls: 'last' } }),
+  budget: (direction) => ({ budget: { sort: direction, nulls: 'last' } }),
+};
+
 @Injectable()
 export class LeadsRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -99,9 +119,7 @@ export class LeadsRepository {
       this.prisma.lead.findMany({
         where,
         include: leadInclude,
-        // Nulls sort last on every column, so a lead with no follow-up date
-        // never displaces one that has a real date to act on.
-        orderBy: { [sort]: { sort: direction, nulls: 'last' } },
+        orderBy: ORDER_BY[sort](direction),
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),
