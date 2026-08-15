@@ -13,10 +13,12 @@ import {
 import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   followUpCompleteSchema,
+  followUpCreateSchema,
   followUpQuerySchema,
   followUpRuleSchema,
   type FollowUp,
   type FollowUpCompleteRequest,
+  type FollowUpCreateRequest,
   type FollowUpQuery,
   type FollowUpRule,
   type FollowUpRuleRequest,
@@ -51,6 +53,21 @@ export class FollowUpsController {
     @CurrentUser() current: AuthenticatedUser,
   ): Promise<FollowUp[]> {
     return this.followUps.list(query, current);
+  }
+
+  /**
+   * Raise one by hand against a lead, a proposal or an invoice. Anyone who can
+   * see the lead can put work on it — chasing is everybody's job.
+   */
+  @Post()
+  @ApiOperation({ summary: 'Record a follow-up to make' })
+  @ApiZodBody(followUpCreateSchema)
+  @ApiZodResponse(HttpStatus.CREATED, followUpResponseSchema, 'The new follow-up')
+  create(
+    @Body(new ZodValidationPipe(followUpCreateSchema)) dto: FollowUpCreateRequest,
+    @CurrentUser() current: AuthenticatedUser,
+  ): Promise<FollowUp> {
+    return this.followUps.createManual(dto, current);
   }
 
   /** Declared before `:id` so "rules" is not read as a follow-up id. */

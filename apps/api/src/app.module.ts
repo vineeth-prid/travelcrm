@@ -12,6 +12,7 @@ import { AuthModule } from './auth/auth.module';
 import { CommunicationModule } from './communication/communication.module';
 import { validateEnv, type Env } from './config/env';
 import { CustomersModule } from './customers/customers.module';
+import { DocumentsModule } from './documents/documents.module';
 import { ExpensesModule } from './expenses/expenses.module';
 import { HealthModule } from './health/health.module';
 import { IntegrationsModule } from './integrations/integrations.module';
@@ -61,6 +62,7 @@ import { UsersModule } from './users/users.module';
     CommunicationModule,
     LeadsModule,
     CustomersModule,
+    DocumentsModule,
     NotificationsModule,
     FollowUpsModule,
     ProposalsModule,

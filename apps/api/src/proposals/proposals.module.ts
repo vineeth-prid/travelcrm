@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { FollowUpsModule } from '../follow-ups/follow-ups.module';
+import { DocumentsModule } from '../documents/documents.module';
 import { LeadsModule } from '../leads/leads.module';
 import { StorageModule } from '../storage/storage.module';
 import { ProposalPdfService } from './proposal-pdf.service';
@@ -9,7 +10,7 @@ import { ProposalsRepository } from './proposals.repository';
 import { ProposalsService } from './proposals.service';
 
 @Module({
-  imports: [LeadsModule, StorageModule, FollowUpsModule],
+  imports: [LeadsModule, StorageModule, FollowUpsModule, DocumentsModule],
   controllers: [ProposalsController],
   providers: [ProposalsService, ProposalsRepository, ProposalPdfService],
   exports: [ProposalsService],

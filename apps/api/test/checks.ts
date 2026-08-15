@@ -7,7 +7,7 @@ import 'reflect-metadata';
 import assert from 'node:assert/strict';
 import { BadRequestException } from '@nestjs/common';
 
-import { changePasswordSchema } from '@travel-crm/sdk';
+import { changePasswordSchema, leadSchema } from '@travel-crm/sdk';
 
 import { parseExtraction } from '../src/ai/extraction.parser';
 import { durationToMs } from '../src/auth/auth.service';
@@ -101,5 +101,39 @@ assert.deepEqual(
 assert.equal(parseExtraction('Sorry, I cannot help with that.'), null);
 assert.equal(parseExtraction('[1,2,3]'), null);
 assert.equal(parseExtraction(''), null);
+
+// --- phone numbers ---------------------------------------------------------
+//
+// The rule is on the digits, not the formatting: a consultant should be able
+// to type a number the way it was given to them.
+{
+  const withPhone = (phone: string) =>
+    leadSchema.safeParse({ customerName: 'Priya Nair', phone, currency: 'INR' });
+
+  for (const good of ['9876543210', '+91 98765 43210', '098765 43210', '(0987) 654-3210']) {
+    assert.ok(withPhone(good).success, `${good} is ten digits however it is written`);
+  }
+
+  for (const bad of ['98765432', '987654321', '+91 9876 5432']) {
+    const result = withPhone(bad);
+    assert.ok(!result.success, `${bad} is too short to be a number`);
+  }
+
+  assert.ok(
+    !withPhone('+91 98765 43210 9999').success,
+    'and a country code is not licence for sixteen digits',
+  );
+
+  // A blank number is still fine, as long as there is some other way to reach
+  // them — which the lead schema enforces separately.
+  assert.ok(
+    leadSchema.safeParse({
+      customerName: 'Priya Nair',
+      phone: '',
+      email: 'priya@example.com',
+      currency: 'INR',
+    }).success,
+  );
+}
 
 console.log('All API checks passed.');

@@ -169,8 +169,15 @@ model Customer {
   city             String?
   country          String?
   notes            String?
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
+
+  /// When they stopped being an enquiry and became a customer: the moment the
+  /// first invoice was raised against an accepted proposal. Their journey is
+  /// tracked from the customer record after this, and the lead leaves the
+  /// active pipeline — it is a booking now, not something to chase.
+  convertedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   leads    Lead[]
   invoices Invoice[]
@@ -179,6 +186,7 @@ model Customer {
   @@index([phone])
   @@index([whatsapp])
   @@index([email])
+  @@index([convertedAt])
   @@map("customers")
 }
 
@@ -560,11 +568,12 @@ model Invoice {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  lead      Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  customer  Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  proposal  Proposal? @relation(fields: [proposalId], references: [id], onDelete: SetNull)
-  createdBy User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  lead      Lead       @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  customer  Customer   @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  proposal  Proposal?  @relation(fields: [proposalId], references: [id], onDelete: SetNull)
+  createdBy User?      @relation(fields: [createdById], references: [id], onDelete: SetNull)
   payments  Payment[]
+  followUps FollowUp[]
 
   @@index([leadId])
   @@index([customerId])
@@ -597,6 +606,16 @@ model Payment {
 
   @@index([invoiceId, paidAt])
   @@map("payments")
+}
+
+/// What a follow-up is chasing.
+enum FollowUpKind {
+  /// An enquiry nobody has answered yet.
+  LEAD
+  /// A proposal the customer is holding. What the schedules create.
+  PROPOSAL
+  /// Money that has been billed and not received.
+  INVOICE
 }
 
 /// Where a scheduled follow-up has got to.
@@ -661,13 +680,24 @@ model FollowUpRule {
 
 /// One scheduled contact with a customer about a proposal.
 model FollowUp {
-  id           String         @id @default(uuid())
-  proposalId   String
-  /// Denormalised from the proposal so the lead's follow-up list is one query.
+  id String @id @default(uuid())
+
+  /// What is being chased. A schedule creates PROPOSAL follow-ups; the other
+  /// two are raised by hand, because chasing an unanswered enquiry or an
+  /// unpaid invoice is the same job with a different subject.
+  kind FollowUpKind @default(PROPOSAL)
+
+  /// Null on a LEAD or INVOICE follow-up.
+  proposalId   String?
+  /// Null unless this is chasing money.
+  invoiceId    String?
+  /// Always set: every follow-up belongs to a lead, whatever it is about.
   leadId       String
   ruleId       String?
-  /// 1-based position in the schedule that created it.
+  /// 1-based position in the schedule that created it. 0 when raised by hand.
   sequence     Int
+  /// Why it was raised. Only ever typed by a person.
+  reason       String?
   dueAt        DateTime
   status       FollowUpStatus @default(PENDING)
   /// Who owes the call. Copied from the lead at creation, so reassigning the
@@ -685,16 +715,21 @@ model FollowUp {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  proposal    Proposal      @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  proposal    Proposal?     @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  invoice     Invoice?      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   lead        Lead          @relation(fields: [leadId], references: [id], onDelete: Cascade)
   rule        FollowUpRule? @relation(fields: [ruleId], references: [id], onDelete: SetNull)
   assignedTo  User?         @relation("FollowUpAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
   completedBy User?         @relation("FollowUpCompleter", fields: [completedById], references: [id], onDelete: SetNull)
 
+  /// Still what keeps a schedule idempotent. Postgres allows many NULLs in a
+  /// unique index, so hand-raised follow-ups (proposalId null) are unaffected.
   @@unique([proposalId, sequence])
   @@index([status, dueAt])
   @@index([assignedToId, status, dueAt])
   @@index([leadId])
+  @@index([invoiceId])
+  @@index([kind, status])
   @@map("follow_ups")
 }
 
@@ -752,6 +787,65 @@ enum SmtpSecurity {
 ///
 /// The password is encrypted at rest and is never returned by the API — not
 /// masked in the client, simply never serialised.
+/// What a document is.
+enum TemplateKind {
+  PROPOSAL
+  INVOICE
+}
+
+/// The agency's own details, as they appear on every customer-facing document.
+///
+/// These were environment variables, which meant changing the office phone
+/// number was a redeploy. They are settings: the people who know them are the
+/// people using the application, not the person with shell access.
+model CompanyProfile {
+  /// Always "default", for the same reason as SmtpSettings.
+  id String @id @default("default")
+
+  name        String  @default("Tour De India Holidays")
+  tagline     String?
+  /// Free text, printed as typed. An address is not a set of fields.
+  address     String?
+  phone       String?
+  email       String?
+  website     String?
+  /// GSTIN or equivalent. Printed on invoices only when set.
+  taxId       String?
+  /// Account name, number, IFSC, UPI — whatever a customer needs to pay.
+  bankDetails String?
+
+  updatedAt DateTime @updatedAt
+
+  @@map("company_profile")
+}
+
+/// The boilerplate half of a proposal or an invoice.
+///
+/// Everything here is copied into the document when it is created, not read
+/// through at render time: changing the terms today must not silently rewrite
+/// what a customer accepted last month.
+model DocumentTemplate {
+  id   String       @id @default(uuid())
+  kind TemplateKind @unique
+
+  /// Prefilled into every new document of this kind.
+  terms        String?
+  /// Proposals only.
+  inclusions   String?
+  exclusions   String?
+  /// Invoices only. Free text: "50% on booking, balance 14 days before travel".
+  paymentTerms String?
+  /// Printed under the totals. Both kinds.
+  footerNote   String?
+
+  /// Proposal: days a quote stays valid. Invoice: days until payment is due.
+  validityDays Int @default(14)
+
+  updatedAt DateTime @updatedAt
+
+  @@map("document_templates")
+}
+
 model SmtpSettings {
   /// Always "default". A settings table with one row beats a settings table
   /// where nothing stops there being two.

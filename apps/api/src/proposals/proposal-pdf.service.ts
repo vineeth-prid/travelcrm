@@ -2,6 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import PDFDocument from 'pdfkit';
 
+import type { CompanyProfile } from '@travel-crm/sdk';
+
 import type { Env } from '../config/env';
 import {
   BRAND,
@@ -54,6 +56,20 @@ export interface CustomerProposalPdfData {
   /** The only figure on the document. What the customer is asked to pay. */
   sellingPrice: number;
   validUntil: Date;
+
+  /**
+   * Whose document this is. Comes from the company profile in settings, so a
+   * changed phone number is a form somebody fills in rather than a redeploy.
+   */
+  company: CompanyProfile;
+  /** Printed under the price. From the proposal template. */
+  footerNote: string | null;
+}
+
+/** The contact line under the company name: whichever details are filled in. */
+function contactLine(company: CompanyProfile): string | null {
+  const parts = [company.phone, company.email, company.website].filter(Boolean);
+  return parts.length > 0 ? parts.join('  ·  ') : null;
 }
 
 /** "5 Nights / 6 Days", the way a travel document says it. */
@@ -93,7 +109,7 @@ export class ProposalPdfService {
       bufferPages: true,
       info: {
         Title: `${data.title} — ${data.reference}`,
-        Author: this.config.get('COMPANY_NAME', { infer: true }),
+        Author: data.company.name,
         Subject: `Travel proposal for ${data.customerName}`,
       },
     });
@@ -116,7 +132,7 @@ export class ProposalPdfService {
     this.twoColumns(doc, 'Inclusions', data.inclusions, 'Exclusions', data.exclusions);
     this.pricing(doc, data);
     this.section(doc, 'Terms & conditions', data.terms, 8.5);
-    this.contact(doc);
+    this.contact(doc, data);
     this.footers(doc, data);
 
     doc.end();
@@ -140,7 +156,7 @@ export class ProposalPdfService {
         .fillColor(BRAND.slate)
         .font('brand-heading-bold')
         .fontSize(18)
-        .text(this.config.get('COMPANY_NAME', { infer: true }), MARGIN, 52);
+        .text(data.company.name, MARGIN, 52);
     }
 
     doc
@@ -343,8 +359,8 @@ export class ProposalPdfService {
     doc.y += 18;
   }
 
-  private contact(doc: PDFKit.PDFDocument): void {
-    const contact = this.config.get('COMPANY_CONTACT', { infer: true });
+  private contact(doc: PDFKit.PDFDocument, data: CustomerProposalPdfData): void {
+    const contact = contactLine(data.company);
     if (!contact) return;
 
     this.space(doc, 86);
@@ -395,7 +411,7 @@ export class ProposalPdfService {
    * before the fifth page exists.
    */
   private footers(doc: PDFKit.PDFDocument, data: CustomerProposalPdfData): void {
-    const company = this.config.get('COMPANY_NAME', { infer: true });
+    const company = data.company.name;
     const range = doc.bufferedPageRange();
 
     for (let index = 0; index < range.count; index += 1) {

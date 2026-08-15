@@ -155,6 +155,15 @@ const optionalDate = (label: string) =>
     )
     .optional();
 
+/**
+ * A subscriber number, however it is typed.
+ *
+ * The rule is on the **digits**, not the formatting: "+91 98765 43210",
+ * "09876543210" and "9876543210" are the same ten-digit number written three
+ * ways, and a consultant should not have to care which. A country code is
+ * allowed in front, so anything from 10 to 13 digits passes, but a 9-digit
+ * number — the common typo — does not.
+ */
 const optionalPhone = (label: string) =>
   z
     .preprocess(
@@ -162,12 +171,34 @@ const optionalPhone = (label: string) =>
       z
         .string()
         .trim()
-        .min(6, `${label} looks too short`)
         .max(24, `${label} looks too long`)
         .regex(/^[+]?[\d\s()-]+$/, `${label} may only contain digits, spaces and + ( ) -`)
+        .refine(hasTenSubscriberDigits, `${label} must be a 10-digit number`)
+        .refine(
+          (value) => digitsOf(value).length <= 15,
+          `${label} has too many digits — check the country code`,
+        )
         .nullable(),
     )
     .optional();
+
+/** Just the digits, for validating and comparing numbers people typed. */
+export function digitsOf(value: string): string {
+  return value.replace(/\D/g, '');
+}
+
+/**
+ * Ten digits of actual subscriber number.
+ *
+ * A leading `+` means a country code is present, so at least one of those
+ * digits is not part of the number — which is what stops "+91 9876 5432" from
+ * passing on a total of ten. A leading zero is trunk prefix, not number.
+ */
+function hasTenSubscriberDigits(value: string): boolean {
+  const digits = digitsOf(value);
+  if (value.trim().startsWith('+')) return digits.length >= 11;
+  return digits.replace(/^0+/, '').length >= 10;
+}
 
 const optionalEmail = z
   .preprocess(
@@ -290,6 +321,8 @@ export const leadQuerySchema = z.object({
   createdTo: optionalDate('To'),
   /** Only leads whose follow-up date has passed. */
   overdue: z.coerce.boolean().optional(),
+  /** Booked enquiries live in the customer book; this brings them back. */
+  includeConverted: z.coerce.boolean().optional(),
   sort: z.enum(['createdAt', 'lastActivityAt', 'nextFollowUpAt', 'budget']).optional(),
   direction: z.enum(['asc', 'desc']).optional(),
   page: z.coerce.number().int().min(1).optional(),
@@ -694,15 +727,49 @@ export const followUpCompleteSchema = z.object({
 export type FollowUpCompleteRequest = z.infer<typeof followUpCompleteSchema>;
 export type FollowUpCompleteInput = z.input<typeof followUpCompleteSchema>;
 
+/** What a follow-up is chasing. Schedules create PROPOSAL ones. */
+export const FOLLOW_UP_KINDS = ['LEAD', 'PROPOSAL', 'INVOICE'] as const;
+
 export const followUpQuerySchema = z.object({
   status: z.enum(FOLLOW_UP_STATUSES).optional(),
+  kind: z.enum(FOLLOW_UP_KINDS).optional(),
   assignedToId: z.preprocess(blankToNull, z.string().uuid().nullable()).optional(),
   leadId: z.preprocess(blankToNull, z.string().uuid().nullable()).optional(),
+  proposalId: z.preprocess(blankToNull, z.string().uuid().nullable()).optional(),
+  invoiceId: z.preprocess(blankToNull, z.string().uuid().nullable()).optional(),
+  /** Customer name, lead reference or destination. */
+  search: optionalText(120),
   due: z.enum(['today', 'upcoming', 'overdue']).optional(),
   limit: z.coerce.number().int().min(1).max(500).optional(),
 });
 
 export type FollowUpQuery = z.infer<typeof followUpQuerySchema>;
+
+/**
+ * Raising one by hand.
+ *
+ * Exactly one subject: a lead on its own, a proposal, or an invoice. The lead
+ * is derived from whichever is given, so a follow-up can never end up attached
+ * to a proposal on one lead and filed under another.
+ */
+export const followUpCreateSchema = z
+  .object({
+    leadId: z.preprocess(blankToNull, z.string().uuid().nullable()).optional(),
+    proposalId: z.preprocess(blankToNull, z.string().uuid().nullable()).optional(),
+    invoiceId: z.preprocess(blankToNull, z.string().uuid().nullable()).optional(),
+    dueAt: z
+      .string({ required_error: 'Choose a date' })
+      .regex(/^\d{4}-\d{2}-\d{2}$/, 'Choose a date'),
+    reason: z.string().trim().min(1, 'Say what this is for').max(200),
+    assignedToId: z.preprocess(blankToNull, z.string().uuid().nullable()).optional(),
+  })
+  .refine(
+    (value) => Boolean(value.leadId ?? value.proposalId ?? value.invoiceId),
+    'Say what this follow-up is about',
+  );
+
+export type FollowUpCreateRequest = z.infer<typeof followUpCreateSchema>;
+export type FollowUpCreateInput = z.input<typeof followUpCreateSchema>;
 
 /** The configurable schedule. Admin-only. */
 export const followUpRuleSchema = z.object({
@@ -731,6 +798,52 @@ export const followUpRuleSchema = z.object({
 
 export type FollowUpRuleRequest = z.infer<typeof followUpRuleSchema>;
 export type FollowUpRuleInput = z.input<typeof followUpRuleSchema>;
+
+// --- Documents -------------------------------------------------------------
+
+export const TEMPLATE_KINDS = ['PROPOSAL', 'INVOICE'] as const;
+
+/**
+ * The agency's own details, as they appear on every document. Admin-only.
+ * These used to be environment variables, which made changing the office
+ * phone number a redeploy.
+ */
+export const companyProfileSchema = z.object({
+  name: z.string().trim().min(1, 'Enter the company name').max(120),
+  tagline: optionalText(160),
+  address: optionalText(400),
+  phone: optionalPhone('Phone'),
+  email: z
+    .preprocess(blankToNull, z.string().trim().email('Enter a valid email').nullable())
+    .optional(),
+  website: optionalText(160),
+  taxId: optionalText(40),
+  bankDetails: optionalText(600),
+});
+
+export type CompanyProfileRequest = z.infer<typeof companyProfileSchema>;
+export type CompanyProfileInput = z.input<typeof companyProfileSchema>;
+
+/**
+ * The boilerplate half of a document. Copied into each new proposal or invoice
+ * rather than read through at render time, so changing the terms today cannot
+ * rewrite what a customer accepted last month.
+ */
+export const documentTemplateSchema = z.object({
+  terms: optionalText(4000),
+  inclusions: optionalText(2000),
+  exclusions: optionalText(2000),
+  paymentTerms: optionalText(600),
+  footerNote: optionalText(400),
+  validityDays: z.coerce
+    .number({ invalid_type_error: 'Days must be a number' })
+    .int()
+    .min(1, 'At least a day')
+    .max(365, 'A year is the most this allows'),
+});
+
+export type DocumentTemplateRequest = z.infer<typeof documentTemplateSchema>;
+export type DocumentTemplateInput = z.input<typeof documentTemplateSchema>;
 
 // --- Email -----------------------------------------------------------------
 

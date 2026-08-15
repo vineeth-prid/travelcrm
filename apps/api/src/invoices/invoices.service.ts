@@ -19,6 +19,7 @@ import { fromDateOnly } from '../leads/leads.mappers';
 import { LeadsRepository } from '../leads/leads.repository';
 import { money } from '../shared/pdf-brand';
 import { PrismaService } from '../shared/prisma.service';
+import { DocumentsService } from '../documents/documents.service';
 import { StorageService } from '../storage/storage.service';
 import { userSummarySelect } from '../users/users.service';
 import { InvoicePdfService, type CustomerInvoicePdfData } from './invoice-pdf.service';
@@ -45,6 +46,7 @@ export class InvoicesService {
     private readonly pdf: InvoicePdfService,
     private readonly storage: StorageService,
     private readonly config: ConfigService<Env, true>,
+    private readonly documents: DocumentsService,
   ) {}
 
   async list(query: InvoiceQuery, actor: AuthenticatedUser): Promise<Invoice[]> {
@@ -179,7 +181,44 @@ export class InvoicesService {
       actorId: actor.id,
     });
 
+    await this.convert(lead.customerId, leadId, record.reference, actor.id);
+
     return toInvoice(record);
+  }
+
+  /**
+   * The moment an enquiry becomes a booking.
+   *
+   * The first invoice raised against a lead is what makes its customer a
+   * customer: from here their history is read from the customer record, and
+   * the lead stops being something to chase. The lead is marked WON at the
+   * same time — billing somebody and still counting them as an open
+   * opportunity is how a pipeline starts lying.
+   *
+   * Idempotent: only the *first* invoice converts, so re-billing a repeat
+   * customer does not rewrite the date they joined.
+   */
+  private async convert(
+    customerId: string,
+    leadId: string,
+    reference: string,
+    actorId: string,
+  ): Promise<void> {
+    const { count } = await this.prisma.customer.updateMany({
+      where: { id: customerId, convertedAt: null },
+      data: { convertedAt: new Date() },
+    });
+
+    await this.leads.setStageIfOpen(leadId, 'WON');
+
+    if (count > 0) {
+      await this.activities.record({
+        leadId,
+        type: 'STAGE_CHANGED',
+        summary: `Booked. Invoice ${reference} raised, and this enquiry is now a customer.`,
+        actorId,
+      });
+    }
   }
 
   /** Drafts only. An issued invoice is a financial document, not a form. */
@@ -271,7 +310,7 @@ export class InvoicesService {
       return this.withPdfUrl(record);
     }
 
-    const document = await this.pdf.render(this.toPdfData(record));
+    const document = await this.pdf.render(await this.toPdfData(record));
     const key = objectKey(record.id);
     await this.storage.put(key, document, 'application/pdf');
     this.logger.log(`Stored invoice PDF ${key} (${document.length} bytes)`);
@@ -353,11 +392,22 @@ export class InvoicesService {
   }
 
   /** Prefills a new invoice. Every one of these is editable per invoice. */
-  defaults(): { dueDays: number; taxRateBps: number | null; paymentTerms: string } {
+  async defaults(): Promise<{
+    dueDays: number;
+    taxRateBps: number | null;
+    paymentTerms: string;
+    notes: string | null;
+  }> {
+    // The invoice template is where these live now; the environment is only
+    // the fallback for a deployment that has never opened the settings page.
+    const template = await this.documents.template('INVOICE');
+
     return {
-      dueDays: this.config.get('INVOICE_DUE_DAYS', { infer: true }),
+      dueDays: template.validityDays,
       taxRateBps: this.config.get('INVOICE_DEFAULT_TAX_BPS', { infer: true }),
-      paymentTerms: this.config.get('INVOICE_PAYMENT_TERMS', { infer: true }),
+      paymentTerms:
+        template.paymentTerms ?? this.config.get('INVOICE_PAYMENT_TERMS', { infer: true }),
+      notes: template.terms,
     };
   }
 
@@ -400,7 +450,11 @@ export class InvoicesService {
   }
 
   /** Built field by field. See CustomerInvoicePdfData for why. */
-  private toPdfData(record: InvoiceWithRelations): CustomerInvoicePdfData {
+  private async toPdfData(record: InvoiceWithRelations): Promise<CustomerInvoicePdfData> {
+    const [company, template] = await Promise.all([
+      this.documents.profile(),
+      this.documents.template('INVOICE'),
+    ]);
     const amountPaid = amountPaidOn(record.payments);
 
     return {
@@ -439,6 +493,9 @@ export class InvoicesService {
 
       paymentTerms: record.paymentTerms,
       notes: record.notes,
+
+      company,
+      footerNote: template.footerNote,
     };
   }
 

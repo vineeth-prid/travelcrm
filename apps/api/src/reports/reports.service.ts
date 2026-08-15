@@ -19,8 +19,14 @@ import { fromDateOnly } from '../leads/leads.mappers';
 import { PrismaService } from '../shared/prisma.service';
 import { userSummarySelect } from '../users/users.service';
 
-/** The default window when none is given: the last twelve months. */
-const DEFAULT_MONTHS = 12;
+/**
+ * The window a dashboard opens on: this month.
+ *
+ * A year-to-date default answers "how are we doing overall", which nobody
+ * asks first thing in the morning. "How is this month going" is the question,
+ * and every other period is a date picker away.
+ */
+const DEFAULT_MONTHS = 1;
 
 type Currency = (typeof CURRENCIES)[number];
 

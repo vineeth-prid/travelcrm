@@ -7,7 +7,12 @@ import { LeadActivityService } from '../leads/lead-activity.service';
 import { dedupeKeyFor, NotificationService } from '../notifications/notification.service';
 import { followUpDue, followUpEscalated, missedFollowUp } from '../notifications/templates';
 import { PrismaService } from '../shared/prisma.service';
-import { daysOverdue, followUpInclude, type FollowUpWithRelations } from './follow-ups.mappers';
+import {
+  daysOverdue,
+  followUpInclude,
+  subjectReference,
+  type FollowUpWithRelations,
+} from './follow-ups.mappers';
 import { FollowUpsService } from './follow-ups.service';
 
 /** Money, the way the emails should read it. */
@@ -113,7 +118,7 @@ export class FollowUpScheduler {
         employeeName: recipient.name,
         customerName: followUp.lead.customer.name,
         destination: followUp.lead.destination,
-        proposalReference: followUp.proposal.reference,
+        proposalReference: subjectReference(followUp),
         proposalValue: this.proposalValueOf(followUp),
         dueOn: longDate(followUp.dueAt),
         sequence: followUp.sequence,
@@ -176,7 +181,7 @@ export class FollowUpScheduler {
           employeeName: recipient.name,
           customerName: followUp.lead.customer.name,
           destination: followUp.lead.destination,
-          proposalReference: followUp.proposal.reference,
+          proposalReference: subjectReference(followUp),
           proposalValue: this.proposalValueOf(followUp),
           dueOn: longDate(followUp.dueAt),
           daysOverdue: Math.max(1, daysOverdue(followUp.dueAt, now)),
@@ -223,7 +228,7 @@ export class FollowUpScheduler {
         companyName: this.companyName,
         customerName: followUp.lead.customer.name,
         employeeName: followUp.assignedTo?.name ?? 'nobody',
-        proposalReference: followUp.proposal.reference,
+        proposalReference: subjectReference(followUp),
         missedCount,
         leadUrl: `${this.notifications.appUrl}/leads/${followUp.leadId}`,
       });
@@ -236,7 +241,7 @@ export class FollowUpScheduler {
           // escalates again at the next threshold rather than once forever.
           dedupeKey: dedupeKeyFor(
             'FOLLOW_UP_ESCALATED',
-            followUp.proposalId,
+            followUp.proposalId ?? followUp.id,
             String(missedCount),
             admin.id,
           ),
@@ -295,7 +300,7 @@ export class FollowUpScheduler {
   /** Naming: not `valueOf`, which would shadow Object.valueOf and break the
    * class decorator in a spectacularly unhelpful way. */
   private proposalValueOf(followUp: FollowUpWithRelations): string {
-    const version = followUp.proposal.versions[0];
+    const version = followUp.proposal?.versions[0];
     return money(version?.currency ?? 'INR', version?.sellingPrice ?? 0);
   }
 

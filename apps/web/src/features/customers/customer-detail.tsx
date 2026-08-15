@@ -12,6 +12,7 @@ import {
   LoadingState,
   PageContainer,
   Table,
+  Tabs,
   TableBody,
   TableCell,
   TableHead,
@@ -20,13 +21,26 @@ import {
 } from '@travel-crm/ui';
 import { UserSquare2 } from 'lucide-react';
 import Link from 'next/link';
+import { useState } from 'react';
 
+import { FollowUpList } from '@/features/follow-ups/follow-up-list';
 import { INVOICE_STATUS_LABELS } from '@/features/invoices/invoice-labels';
 import { formatDay, formatMoney, STAGE_LABELS } from '@/features/leads/lead-labels';
 import { api } from '@/lib/api';
 import { queryKeys } from '@/lib/query-keys';
 
+/** The customer's journey, in the order it happened. */
+const TABS = [
+  { id: 'leads', label: 'Enquiries' },
+  { id: 'follow-ups', label: 'Follow-ups' },
+  { id: 'invoices', label: 'Invoices' },
+] as const;
+
+type TabId = (typeof TABS)[number]['id'];
+
 export function CustomerDetail({ customerId }: { customerId: string }) {
+  const [tab, setTab] = useState<TabId>('leads');
+
   const detail = useQuery({
     queryKey: queryKeys.customer(customerId),
     queryFn: ({ signal }) => api.customers.get(customerId, signal),
@@ -81,7 +95,15 @@ export function CustomerDetail({ customerId }: { customerId: string }) {
           />
         </div>
 
-        <Card>
+        {/* Same tabs as a lead, in the same order, so the two pages read alike. */}
+        <Tabs
+          aria-label="Customer sections"
+          items={TABS}
+          value={tab}
+          onValueChange={(next) => setTab(next as TabId)}
+        />
+
+        <Card hidden={tab !== 'leads'}>
           <CardHeader>
             <CardTitle>Enquiries</CardTitle>
           </CardHeader>
@@ -128,7 +150,7 @@ export function CustomerDetail({ customerId }: { customerId: string }) {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card hidden={tab !== 'invoices'}>
           <CardHeader>
             <CardTitle>Invoices</CardTitle>
           </CardHeader>
@@ -171,9 +193,44 @@ export function CustomerDetail({ customerId }: { customerId: string }) {
             )}
           </CardContent>
         </Card>
+
+        <Card hidden={tab !== 'follow-ups'}>
+          <CardHeader>
+            <CardTitle>Follow-ups</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {/*
+             * Across every enquiry this customer has made, so a repeat
+             * customer's chases are in one place rather than split by lead.
+             */}
+            <CustomerFollowUps leadIds={leads.map((lead) => lead.id)} />
+          </CardContent>
+        </Card>
       </div>
     </PageContainer>
   );
+}
+
+/** Every follow-up across a customer's leads, soonest first. */
+function CustomerFollowUps({ leadIds }: { leadIds: string[] }) {
+  const followUps = useQuery({
+    queryKey: queryKeys.followUps({ leadIds: leadIds.join(',') }),
+    enabled: leadIds.length > 0,
+    queryFn: async ({ signal }) => {
+      const perLead = await Promise.all(
+        leadIds.map((leadId) => api.followUps.list({ leadId }, signal)),
+      );
+      return perLead.flat().sort((a, b) => a.dueAt.localeCompare(b.dueAt));
+    },
+  });
+
+  if (leadIds.length === 0) return <p className="text-sm text-muted-foreground">No enquiries.</p>;
+  if (followUps.isPending) return <LoadingState label="Loading follow-ups…" />;
+  if (followUps.isError) {
+    return <p className="text-sm text-muted-foreground">The follow-ups could not be loaded.</p>;
+  }
+
+  return <FollowUpList followUps={followUps.data} />;
 }
 
 function Figure({ label, value }: { label: string; value: string }) {

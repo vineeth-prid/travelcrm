@@ -35,6 +35,13 @@ export const envSchema = z.object({
 
   /** Where the links in notification emails point. */
   APP_URL: z.string().url().default('http://localhost:3000'),
+  /** This API's own public base, used for links to locally stored documents. */
+  API_URL: z.string().url().default('http://localhost:3001'),
+  /**
+   * Where generated documents land when object storage cannot be reached, so
+   * a missing MinIO cannot block a consultant from sending a proposal.
+   */
+  STORAGE_DIR: z.string().default('storage'),
 
   // --- Meta (Instagram + WhatsApp Cloud) ------------------------------------
   // All optional: the app boots without them, and the affected channel reports

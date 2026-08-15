@@ -17,6 +17,8 @@ export const queryKeys = {
   invoicesAll: ['invoices'] as const,
   invoice: (id: string) => ['invoices', id] as const,
   smtp: ['settings', 'smtp'] as const,
+  company: ['settings', 'company'] as const,
+  template: (kind: string) => ['settings', 'templates', kind] as const,
   notificationLog: ['settings', 'notifications'] as const,
   staff: ['staff'] as const,
   users: ['users'] as const,

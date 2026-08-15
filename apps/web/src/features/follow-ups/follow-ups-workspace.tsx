@@ -1,7 +1,15 @@
 'use client';
 
 import type { FollowUp, FollowUpQuery } from '@travel-crm/sdk';
-import { Button, Card, EmptyState, LoadingState, PageContainer } from '@travel-crm/ui';
+import {
+  Button,
+  Card,
+  EmptyState,
+  LoadingState,
+  PageContainer,
+  SearchBox,
+  Tabs,
+} from '@travel-crm/ui';
 import { CalendarClock } from 'lucide-react';
 import { useState } from 'react';
 
@@ -19,11 +27,25 @@ const VIEWS: { label: string; query: FollowUpQuery }[] = [
   { label: 'Done', query: { status: 'COMPLETED' } },
 ];
 
+/** What is being chased. Three different jobs that happen to share a list. */
+const KINDS = [
+  { id: 'ALL', label: 'Everything' },
+  { id: 'LEAD', label: 'Lead conversion' },
+  { id: 'PROPOSAL', label: 'Proposals' },
+  { id: 'INVOICE', label: 'Invoices' },
+] as const;
+
 export function FollowUpsWorkspace({ showRules = false }: { showRules?: boolean }) {
   const [view, setView] = useState(0);
+  const [kind, setKind] = useState<(typeof KINDS)[number]['id']>('ALL');
+  const [search, setSearch] = useState('');
   const [completing, setCompleting] = useState<FollowUp | null>(null);
 
-  const followUps = useFollowUps(VIEWS[view]!.query);
+  const followUps = useFollowUps({
+    ...VIEWS[view]!.query,
+    kind: kind === 'ALL' ? undefined : kind,
+    search: search.trim() || undefined,
+  });
 
   return (
     <PageContainer
@@ -32,6 +54,23 @@ export function FollowUpsWorkspace({ showRules = false }: { showRules?: boolean 
       description="Everything owed to a customer who is holding a proposal."
     >
       <div className="flex flex-col gap-4">
+        <Tabs
+          aria-label="What is being chased"
+          items={KINDS}
+          value={kind}
+          onValueChange={(next) => setKind(next as (typeof KINDS)[number]['id'])}
+        />
+
+        <div className="flex flex-wrap items-center gap-2">
+          <SearchBox
+            className="min-w-56 flex-1 sm:max-w-xs"
+            placeholder="Customer name, reference or destination"
+            aria-label="Search follow-ups"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+        </div>
+
         <div className="flex flex-wrap gap-2">
           {VIEWS.map((item, index) => (
             <Button

@@ -1,4 +1,9 @@
-import { CONTACT_METHODS, FOLLOW_UP_OUTCOMES, FOLLOW_UP_STATUSES } from '@travel-crm/sdk';
+import {
+  CONTACT_METHODS,
+  FOLLOW_UP_KINDS,
+  FOLLOW_UP_OUTCOMES,
+  FOLLOW_UP_STATUSES,
+} from '@travel-crm/sdk';
 import { z } from 'zod';
 
 import { userSummarySchema } from '../users/users.schemas';
@@ -7,12 +12,16 @@ import { userSummarySchema } from '../users/users.schemas';
 
 export const followUpResponseSchema = z.object({
   id: z.string().uuid(),
-  proposalId: z.string().uuid(),
-  proposalReference: z.string(),
+  kind: z.enum(FOLLOW_UP_KINDS),
+  proposalId: z.string().uuid().nullable(),
+  proposalReference: z.string().nullable(),
+  invoiceId: z.string().uuid().nullable(),
+  invoiceReference: z.string().nullable(),
   leadId: z.string().uuid(),
   leadReference: z.string(),
   customerName: z.string(),
   destination: z.string().nullable(),
+  reason: z.string().nullable(),
   sequence: z.number().int(),
   dueAt: z.string().datetime(),
   status: z.enum(FOLLOW_UP_STATUSES),

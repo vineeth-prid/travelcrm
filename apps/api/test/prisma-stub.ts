@@ -23,6 +23,7 @@ export interface UserRow {
 }
 
 export interface CustomerRow {
+  convertedAt: Date | null;
   id: string;
   name: string;
   phone: string | null;
@@ -221,7 +222,10 @@ export interface FollowUpRuleRow {
 
 export interface FollowUpRow {
   id: string;
-  proposalId: string;
+  kind: string;
+  proposalId: string | null;
+  invoiceId: string | null;
+  reason: string | null;
   leadId: string;
   ruleId: string | null;
   sequence: number;
@@ -349,6 +353,31 @@ function compare(actual: unknown, condition: Record<string, unknown>): boolean {
     }
   }
   return true;
+}
+
+/** Everything a follow-up row has before the caller's data is merged in. */
+function blankFollowUp(): FollowUpRow {
+  return {
+    id: randomUUID(),
+    kind: 'PROPOSAL',
+    proposalId: null,
+    invoiceId: null,
+    reason: null,
+    leadId: '',
+    ruleId: null,
+    sequence: 0,
+    dueAt: new Date(),
+    status: 'PENDING',
+    assignedToId: null,
+    completedAt: null,
+    completedById: null,
+    comment: null,
+    contactMethod: null,
+    outcome: null,
+    nextAction: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
 }
 
 export type OrderBy = 'asc' | 'desc' | { sort: 'asc' | 'desc'; nulls?: 'first' | 'last' };
@@ -570,6 +599,9 @@ export function createPrismaStub() {
   ];
   const contacts: ContactRow[] = [];
   const customers: CustomerRow[] = [];
+  /** Settings singletons: empty until something writes them. */
+  const companyProfiles: Record<string, unknown>[] = [];
+  const documentTemplates: Record<string, unknown>[] = [];
   const leads: LeadRow[] = [];
   const leadActivities: LeadActivityRow[] = [];
   const proposals: ProposalRow[] = [];
@@ -1000,6 +1032,8 @@ export function createPrismaStub() {
       create: ({ data }: { data: Partial<CustomerRow> & { name: string } }) => {
         const row: CustomerRow = {
           id: randomUUID(),
+          convertedAt: null,
+          convertedAt: null,
           phone: null,
           whatsapp: null,
           email: null,
@@ -1013,6 +1047,15 @@ export function createPrismaStub() {
         };
         customers.push(row);
         return Promise.resolve(row);
+      },
+
+      /** How a lead's customer is marked converted when the first invoice lands. */
+      updateMany: ({ where, data }: { where: unknown; data: Partial<CustomerRow> }) => {
+        const matched = customers.filter((row) =>
+          matchesWhere(row as unknown as Record<string, unknown>, where),
+        );
+        for (const row of matched) Object.assign(row, data, { updatedAt: new Date() });
+        return Promise.resolve({ count: matched.length });
       },
 
       update: ({ where, data }: { where: { id: string }; data: Partial<CustomerRow> }) => {
@@ -1645,26 +1688,17 @@ export function createPrismaStub() {
             throw uniqueViolation('follow_ups_proposalId_sequence_key');
           }
 
-          followUps.push({
-            id: randomUUID(),
-            leadId: '',
-            ruleId: null,
-            dueAt: new Date(),
-            status: 'PENDING',
-            assignedToId: null,
-            completedAt: null,
-            completedById: null,
-            comment: null,
-            contactMethod: null,
-            outcome: null,
-            nextAction: null,
-            ...input,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          });
+          followUps.push({ ...blankFollowUp(), ...input });
           count += 1;
         }
         return Promise.resolve({ count });
+      },
+
+      /** How a hand-raised follow-up is written. */
+      create: ({ data }: { data: Partial<FollowUpRow> & { leadId: string } }) => {
+        const row: FollowUpRow = { ...blankFollowUp(), ...data };
+        followUps.push(row);
+        return Promise.resolve(withFollowUpRelations(row));
       },
 
       findMany: ({
@@ -1767,6 +1801,59 @@ export function createPrismaStub() {
         ),
     },
 
+    companyProfile: {
+      findUnique: ({ where }: { where: { id: string } }) =>
+        Promise.resolve(companyProfiles.find((row) => row.id === where.id) ?? null),
+
+      upsert: ({
+        where,
+        create,
+        update,
+      }: {
+        where: { id: string };
+        create: Record<string, unknown>;
+        update: Record<string, unknown>;
+      }) => {
+        const existing = companyProfiles.find((row) => row.id === where.id);
+        if (existing) {
+          Object.assign(existing, update, { updatedAt: new Date() });
+          return Promise.resolve(existing);
+        }
+        const row = { ...create, id: where.id, updatedAt: new Date() } as Record<string, unknown>;
+        companyProfiles.push(row);
+        return Promise.resolve(row);
+      },
+    },
+
+    documentTemplate: {
+      findUnique: ({ where }: { where: { kind: string } }) =>
+        Promise.resolve(documentTemplates.find((row) => row.kind === where.kind) ?? null),
+
+      upsert: ({
+        where,
+        create,
+        update,
+      }: {
+        where: { kind: string };
+        create: Record<string, unknown>;
+        update: Record<string, unknown>;
+      }) => {
+        const existing = documentTemplates.find((row) => row.kind === where.kind);
+        if (existing) {
+          Object.assign(existing, update, { updatedAt: new Date() });
+          return Promise.resolve(existing);
+        }
+        const row = {
+          ...create,
+          id: randomUUID(),
+          kind: where.kind,
+          updatedAt: new Date(),
+        } as Record<string, unknown>;
+        documentTemplates.push(row);
+        return Promise.resolve(row);
+      },
+    },
+
     smtpSettings: {
       findUnique: ({ where }: { where: { id: string } }) =>
         Promise.resolve(smtpSettings.find((row) => row.id === where.id) ?? null),
@@ -1862,6 +1949,7 @@ export function createPrismaStub() {
   function withFollowUpRelations(row: FollowUpRow) {
     const lead = leads.find((item) => item.id === row.leadId);
     const proposal = proposals.find((item) => item.id === row.proposalId);
+    const invoice = invoices.find((item) => item.id === row.invoiceId);
     return {
       ...row,
       assignedTo: users.find((item) => item.id === row.assignedToId) ?? null,
@@ -1878,7 +1966,12 @@ export function createPrismaStub() {
               .slice(0, 1),
           }
         : null,
+      invoice: invoice ? { ...invoice, payments: paymentsFor(invoice.id) } : null,
     };
+  }
+
+  function paymentsFor(invoiceId: string) {
+    return payments.filter((payment) => payment.invoiceId === invoiceId);
   }
 
   function addVersion(

@@ -852,15 +852,24 @@ export type FollowUpOutcome =
   | 'NOT_INTERESTED'
   | 'OTHER';
 
+export type FollowUpKind = 'LEAD' | 'PROPOSAL' | 'INVOICE';
+
 export interface FollowUp {
   id: string;
-  proposalId: string;
-  proposalReference: string;
+  kind: FollowUpKind;
+  /** Null unless `kind` is PROPOSAL. */
+  proposalId: string | null;
+  proposalReference: string | null;
+  /** Null unless `kind` is INVOICE. */
+  invoiceId: string | null;
+  invoiceReference: string | null;
   leadId: string;
   leadReference: string;
   customerName: string;
   destination: string | null;
-  /** 1-based position in the schedule. */
+  /** Why it was raised. Only ever set on one somebody raised by hand. */
+  reason: string | null;
+  /** 1-based position in the schedule; 0 when raised by hand. */
   sequence: number;
   dueAt: string;
   status: FollowUpStatus;
@@ -874,7 +883,11 @@ export interface FollowUp {
   nextAction: string | null;
 
   currency: string;
-  /** The customer-facing figure only — never cost or margin. */
+  /**
+   * What is at stake: the proposal's selling price, the invoice's outstanding
+   * balance, or the lead's budget. Customer-facing figures only — never cost
+   * or margin.
+   */
   proposalValue: number;
 
   /** Whole days past due; 0 when not yet due or already done. */
@@ -894,6 +907,34 @@ export interface FollowUpRule {
   isDefault: boolean;
   active: boolean;
   updatedAt: string;
+}
+
+// --- Documents -------------------------------------------------------------
+
+export type TemplateKind = 'PROPOSAL' | 'INVOICE';
+
+export interface CompanyProfile {
+  name: string;
+  tagline: string | null;
+  address: string | null;
+  phone: string | null;
+  email: string | null;
+  website: string | null;
+  taxId: string | null;
+  bankDetails: string | null;
+  updatedAt: string | null;
+}
+
+export interface DocumentTemplate {
+  kind: TemplateKind;
+  terms: string | null;
+  inclusions: string | null;
+  exclusions: string | null;
+  paymentTerms: string | null;
+  footerNote: string | null;
+  /** Proposal: how long a quote stays valid. Invoice: days until due. */
+  validityDays: number;
+  updatedAt: string | null;
 }
 
 // --- Email -----------------------------------------------------------------

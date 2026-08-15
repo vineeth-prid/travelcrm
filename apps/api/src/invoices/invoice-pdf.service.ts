@@ -2,6 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import PDFDocument from 'pdfkit';
 
+import type { CompanyProfile } from '@travel-crm/sdk';
+
 import type { Env } from '../config/env';
 import {
   BRAND,
@@ -59,6 +61,21 @@ export interface CustomerInvoicePdfData {
 
   paymentTerms: string | null;
   notes: string | null;
+
+  /**
+   * Whose invoice this is — name, contact, tax registration and where to send
+   * the money. From the company profile in settings rather than the
+   * environment, because a changed bank account should not need a redeploy.
+   */
+  company: CompanyProfile;
+  /** Printed at the foot of the document. From the invoice template. */
+  footerNote: string | null;
+}
+
+/** The contact line under the company name: whichever details are filled in. */
+function contactLine(company: CompanyProfile): string | null {
+  const parts = [company.phone, company.email, company.website].filter(Boolean);
+  return parts.length > 0 ? parts.join('  ·  ') : null;
 }
 
 const METHOD_LABELS: Record<string, string> = {
@@ -94,7 +111,7 @@ export class InvoicePdfService {
       bufferPages: true,
       info: {
         Title: `Invoice ${data.reference}`,
-        Author: this.config.get('COMPANY_NAME', { infer: true }),
+        Author: data.company.name,
         Subject: `Invoice for ${data.billingName}`,
       },
     });
@@ -135,7 +152,7 @@ export class InvoicePdfService {
         .fillColor(BRAND.slate)
         .font('brand-heading-bold')
         .fontSize(17)
-        .text(this.config.get('COMPANY_NAME', { infer: true }), MARGIN, MARGIN + 12);
+        .text(data.company.name, MARGIN, MARGIN + 12);
     }
 
     doc
@@ -198,9 +215,10 @@ export class InvoicePdfService {
     const fromBottom = block(
       'From',
       [
-        this.config.get('COMPANY_NAME', { infer: true }),
-        this.config.get('COMPANY_CONTACT', { infer: true }) || null,
-        this.companyTaxId ? `Tax ID: ${this.companyTaxId}` : null,
+        data.company.name,
+        contactLine(data.company),
+        data.company.address,
+        data.company.taxId ? `Tax ID: ${data.company.taxId}` : null,
       ],
       MARGIN,
     );
@@ -378,7 +396,7 @@ export class InvoicePdfService {
   }
 
   private paymentDetails(doc: PDFKit.PDFDocument, data: CustomerInvoicePdfData): void {
-    const bank = this.config.get('COMPANY_BANK_DETAILS', { infer: true });
+    const bank = data.company.bankDetails;
     if (!bank && !data.paymentTerms) return;
 
     this.space(doc, 110);
@@ -450,13 +468,9 @@ export class InvoicePdfService {
     }
   }
 
-  private get companyTaxId(): string {
-    return this.config.get('COMPANY_TAX_ID', { infer: true });
-  }
-
   private footers(doc: PDFKit.PDFDocument, data: CustomerInvoicePdfData): void {
-    const company = this.config.get('COMPANY_NAME', { infer: true });
-    const contact = this.config.get('COMPANY_CONTACT', { infer: true });
+    const company = data.company.name;
+    const contact = contactLine(data.company) ?? '';
     const range = doc.bufferedPageRange();
 
     for (let index = 0; index < range.count; index += 1) {

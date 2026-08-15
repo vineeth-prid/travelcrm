@@ -34,6 +34,18 @@ export class CustomersService {
           { name: { contains: query.search, mode: 'insensitive' } },
           { email: { contains: query.search, mode: 'insensitive' } },
           { city: { contains: query.search, mode: 'insensitive' } },
+          // Where they have asked to go, over any of their leads: "who wanted
+          // Bali?" is a question the customer book should answer.
+          {
+            leads: {
+              some: {
+                AND: [
+                  leadScopeFor(actor),
+                  { destination: { contains: query.search, mode: 'insensitive' } },
+                ],
+              },
+            },
+          },
           ...(digits ? [{ phone: { contains: digits } }, { whatsapp: { contains: digits } }] : []),
         ],
       });

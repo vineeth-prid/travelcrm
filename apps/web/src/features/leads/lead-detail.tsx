@@ -16,11 +16,12 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  Tabs,
   toast,
 } from '@travel-crm/ui';
-import { Mail, MessageCircle, Pencil, Phone, Users } from 'lucide-react';
+import { CalendarPlus, Mail, MessageCircle, Pencil, Phone, Users } from 'lucide-react';
 import Link from 'next/link';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 
 import { useSession } from '@/features/auth/session-context';
 import {
@@ -33,6 +34,7 @@ import {
   SOURCE_LABELS,
 } from './lead-labels';
 import { FollowUpsSection } from '@/features/follow-ups/follow-ups-section';
+import { ScheduleDialog } from '@/features/follow-ups/schedule-dialog';
 import { InvoicesSection } from '@/features/invoices/invoices-section';
 import { ProposalsSection } from '@/features/proposals/proposals-section';
 import { LeadTimeline } from './lead-timeline';
@@ -40,6 +42,17 @@ import { StageControl } from './stage-control';
 import { useAssignLead, useLead, useStaff } from './use-leads';
 
 const UNASSIGNED = '__unassigned__';
+
+/** The sections of a lead, in the order somebody works through them. */
+const TABS = [
+  { id: 'requirements', label: 'Travel requirements' },
+  { id: 'follow-ups', label: 'Follow-ups' },
+  { id: 'proposals', label: 'Proposals' },
+  { id: 'invoices', label: 'Invoices' },
+  { id: 'activity', label: 'Activity' },
+] as const;
+
+type TabId = (typeof TABS)[number]['id'];
 
 export function LeadDetail({ leadId }: { leadId: string }) {
   const lead = useLead(leadId);
@@ -67,6 +80,8 @@ export function LeadDetail({ leadId }: { leadId: string }) {
 }
 
 function LoadedLead({ lead }: { lead: Lead }) {
+  const [tab, setTab] = useState<TabId>('requirements');
+  const [scheduling, setScheduling] = useState(false);
   const user = useSession();
   const staff = useStaff();
   const assign = useAssignLead(lead.id);
@@ -118,8 +133,20 @@ function LoadedLead({ lead }: { lead: Lead }) {
       }
     >
       <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-        <div className="flex flex-col gap-6">
-          <Card>
+        <div className="flex flex-col gap-4">
+          {/*
+           * Tabbed rather than stacked: with requirements, timeline, proposals,
+           * follow-ups and invoices on one page, the invoice a consultant came
+           * for was four screens down.
+           */}
+          <Tabs
+            aria-label="Lead sections"
+            items={TABS}
+            value={tab}
+            onValueChange={(next) => setTab(next as TabId)}
+          />
+
+          <Card hidden={tab !== 'requirements'}>
             <CardHeader>
               <CardTitle>Travel requirements</CardTitle>
             </CardHeader>
@@ -181,16 +208,20 @@ function LoadedLead({ lead }: { lead: Lead }) {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Activity</CardTitle>
+          <Card hidden={tab !== 'follow-ups'}>
+            <CardHeader className="flex-row items-center justify-between gap-4 space-y-0">
+              <CardTitle>Follow-ups</CardTitle>
+              <Button size="sm" variant="secondary" onClick={() => setScheduling(true)}>
+                <CalendarPlus aria-hidden />
+                Record follow-up
+              </Button>
             </CardHeader>
             <CardContent>
-              <LeadTimeline leadId={lead.id} />
+              <FollowUpsSection leadId={lead.id} />
             </CardContent>
           </Card>
 
-          <Card>
+          <Card hidden={tab !== 'proposals'}>
             <CardHeader>
               <CardTitle>Proposals</CardTitle>
             </CardHeader>
@@ -199,16 +230,7 @@ function LoadedLead({ lead }: { lead: Lead }) {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Follow-ups</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <FollowUpsSection leadId={lead.id} />
-            </CardContent>
-          </Card>
-
-          <Card>
+          <Card hidden={tab !== 'invoices'}>
             <CardHeader>
               <CardTitle>Invoices & payments</CardTitle>
             </CardHeader>
@@ -216,7 +238,23 @@ function LoadedLead({ lead }: { lead: Lead }) {
               <InvoicesSection lead={lead} />
             </CardContent>
           </Card>
+
+          <Card hidden={tab !== 'activity'}>
+            <CardHeader>
+              <CardTitle>Activity</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <LeadTimeline leadId={lead.id} />
+            </CardContent>
+          </Card>
         </div>
+
+        <ScheduleDialog
+          open={scheduling}
+          onClose={() => setScheduling(false)}
+          subject={{ leadId: lead.id }}
+          subjectLabel={lead.reference}
+        />
 
         <div className="flex flex-col gap-6">
           <Card>

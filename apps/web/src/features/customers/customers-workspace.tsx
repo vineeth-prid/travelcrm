@@ -52,7 +52,7 @@ export function CustomersWorkspace() {
         <div className="flex flex-wrap items-center gap-3">
           <SearchBox
             className="min-w-64 flex-1"
-            placeholder="Name, email, phone or city"
+            placeholder="Name, destination, email, phone or city"
             value={query.search ?? ''}
             onChange={(event) =>
               setQuery((current) => ({ ...current, search: event.target.value || undefined }))
@@ -97,7 +97,7 @@ export function CustomersWorkspace() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Customer</TableHead>
-                  <TableHead>Where they want to go</TableHead>
+                  <TableHead>Destination</TableHead>
                   <TableHead className="text-right">Enquiries</TableHead>
                   <TableHead className="text-right">Booked</TableHead>
                   <TableHead className="text-right">Invoiced</TableHead>

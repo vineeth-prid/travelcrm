@@ -32,3 +32,4 @@ docker/volumes/
 .claude/settings.local.json
 .claude/proven-config.json
 .claude/.proven-config-version
+storage/

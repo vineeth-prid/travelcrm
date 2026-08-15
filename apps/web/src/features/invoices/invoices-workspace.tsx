@@ -130,8 +130,10 @@ export function InvoicesWorkspace() {
                 {invoices.data.map((invoice) => (
                   <TableRow key={invoice.id}>
                     <TableCell>
+                      {/* The invoice, not its lead: somebody who clicked an
+                          invoice reference wants the document. */}
                       <Link
-                        href={`/leads/${invoice.leadId}`}
+                        href={`/invoices/${invoice.id}`}
                         className="font-medium text-foreground hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       >
                         {invoice.reference}

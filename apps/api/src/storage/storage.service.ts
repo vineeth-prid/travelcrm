@@ -1,6 +1,9 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Client } from 'minio';
+import { existsSync } from 'node:fs';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { dirname, resolve, sep } from 'node:path';
 
 import type { Env } from '../config/env';
 
@@ -37,6 +40,9 @@ export class StorageService implements OnModuleInit {
   private readonly internal: Client;
   private readonly public: Client;
   private readonly bucket: string;
+  /** Where PDFs land when MinIO is unreachable. */
+  private readonly localRoot: string;
+  private readonly apiUrl: string;
 
   constructor(config: ConfigService<Env, true>) {
     const credentials = {
@@ -45,6 +51,8 @@ export class StorageService implements OnModuleInit {
     };
 
     this.bucket = config.get('MINIO_BUCKET', { infer: true });
+    this.localRoot = resolve(config.get('STORAGE_DIR', { infer: true }));
+    this.apiUrl = `${config.get('API_URL', { infer: true }).replace(/\/$/, '')}/api/v1`;
     this.internal = new Client({
       ...parseEndpoint(config.get('MINIO_ENDPOINT', { infer: true })),
       ...credentials,
@@ -69,14 +77,71 @@ export class StorageService implements OnModuleInit {
     }
   }
 
+  /**
+   * Stores an object, falling back to the local disk when MinIO cannot be
+   * reached.
+   *
+   * Object storage being down used to mean no PDF could be generated at all,
+   * which in turn meant no proposal could be submitted — a whole workflow
+   * blocked by a service a small agency may not even be running. A document
+   * on the API's own disk is served back through `GET /files/…`, which is
+   * authorised properly; the only thing lost is the public link that channel
+   * delivery needs.
+   */
   async put(objectKey: string, body: Buffer, contentType: string): Promise<void> {
-    await this.internal.putObject(this.bucket, objectKey, body, body.length, {
-      'Content-Type': contentType,
-    });
+    try {
+      await this.internal.putObject(this.bucket, objectKey, body, body.length, {
+        'Content-Type': contentType,
+      });
+      return;
+    } catch (error) {
+      this.logger.warn(
+        `Object storage rejected ${objectKey} (${error instanceof Error ? error.message : String(error)}). ` +
+          'Writing it to local disk instead.',
+      );
+    }
+
+    const path = this.localPath(objectKey);
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, body);
+    this.logger.log(`Stored ${objectKey} locally at ${path}`);
   }
 
-  /** Time-limited URL the browser (and WhatsApp) can fetch directly. */
-  presignedUrl(objectKey: string): Promise<string> {
+  /**
+   * A link the browser can fetch. Presigned when the object is in MinIO, and
+   * an authenticated API URL when it is on local disk.
+   */
+  async presignedUrl(objectKey: string): Promise<string> {
+    if (existsSync(this.localPath(objectKey))) {
+      return `${this.apiUrl}/files/${objectKey}`;
+    }
+
     return this.public.presignedGetObject(this.bucket, objectKey, LINK_TTL_SECONDS);
+  }
+
+  /** Reads back an object that was written to local disk. */
+  readLocal(objectKey: string): Promise<Buffer> {
+    return readFile(this.localPath(objectKey));
+  }
+
+  hasLocal(objectKey: string): boolean {
+    return existsSync(this.localPath(objectKey));
+  }
+
+  /**
+   * Where an object key lands on disk.
+   *
+   * The key is built by this application, never by a client, but it is still
+   * resolved and checked against the root: a traversal here would hand out
+   * arbitrary files from the server.
+   */
+  private localPath(objectKey: string): string {
+    const path = resolve(this.localRoot, objectKey);
+
+    if (path !== this.localRoot && !path.startsWith(this.localRoot + sep)) {
+      throw new Error(`Refusing to touch ${objectKey}: it resolves outside the storage directory.`);
+    }
+
+    return path;
   }
 }

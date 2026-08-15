@@ -1,8 +1,9 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import type { FollowUpRule, Prisma } from '@prisma/client';
+import type { FollowUpKind, FollowUpRule, Prisma } from '@prisma/client';
 import type {
   FollowUp,
   FollowUpCompleteRequest,
+  FollowUpCreateRequest,
   FollowUpQuery,
   FollowUpRule as FollowUpRuleDto,
   FollowUpRuleRequest,
@@ -145,8 +146,24 @@ export class FollowUpsService {
     const and = where.AND as Prisma.FollowUpWhereInput[];
 
     if (query.status) and.push({ status: query.status });
+    if (query.kind) and.push({ kind: query.kind });
     if (query.assignedToId) and.push({ assignedToId: query.assignedToId });
     if (query.leadId) and.push({ leadId: query.leadId });
+    if (query.proposalId) and.push({ proposalId: query.proposalId });
+    if (query.invoiceId) and.push({ invoiceId: query.invoiceId });
+
+    // Searching by the customer's name is the only search anybody does here:
+    // a consultant looking at a list of chases is thinking about the person.
+    if (query.search) {
+      and.push({
+        OR: [
+          { lead: { customer: { name: { contains: query.search, mode: 'insensitive' } } } },
+          { lead: { reference: { contains: query.search, mode: 'insensitive' } } },
+          { lead: { destination: { contains: query.search, mode: 'insensitive' } } },
+          { reason: { contains: query.search, mode: 'insensitive' } },
+        ],
+      });
+    }
 
     if (query.due === 'today') {
       and.push({ status: { in: ['PENDING', 'DUE'] }, dueAt: { lt: endOfToday() } });
@@ -170,6 +187,105 @@ export class FollowUpsService {
 
   async listForLead(leadId: string, actor: AuthenticatedUser): Promise<FollowUp[]> {
     return this.list({ leadId }, actor);
+  }
+
+  /**
+   * Raises one by hand, against a lead, a proposal or an invoice.
+   *
+   * The schedules only ever chase proposals, which left the two commonest
+   * jobs in a travel agency — chasing an enquiry nobody has answered, and
+   * chasing an invoice nobody has paid — with nowhere to be recorded.
+   *
+   * The lead is derived from whatever the follow-up is about, so it can never
+   * be filed under a different lead from its own subject.
+   */
+  async createManual(input: FollowUpCreateRequest, actor: AuthenticatedUser): Promise<FollowUp> {
+    const { kind, leadId, proposalId, invoiceId } = await this.subjectOf(input);
+
+    // Visibility is the lead's: if they cannot see the lead, they cannot
+    // put work on it.
+    const lead = await this.leads.findById(leadId);
+    const visible =
+      lead &&
+      (actor.role === 'ADMIN' || lead.assignedToId === actor.id || lead.createdById === actor.id);
+
+    if (!lead || !visible) {
+      throw new NotFoundException('That lead no longer exists.');
+    }
+
+    const dueAt = new Date(`${input.dueAt}T09:00:00.000Z`);
+
+    const record = await this.prisma.followUp.create({
+      data: {
+        kind,
+        leadId,
+        proposalId,
+        invoiceId,
+        // Zero says "nobody scheduled this" — the schedules number from 1.
+        sequence: 0,
+        dueAt,
+        reason: input.reason,
+        assignedToId: input.assignedToId ?? lead.assignedToId ?? actor.id,
+      },
+      include: followUpInclude,
+    });
+
+    await this.activities.record({
+      leadId,
+      type: 'FOLLOW_UP_SCHEDULED',
+      summary: `Follow-up set for ${input.dueAt} — ${input.reason}`,
+      actorId: actor.id,
+    });
+
+    // The lead list's "next follow-up" column reads this, so a hand-raised
+    // follow-up has to move it or the pipeline looks quiet.
+    if (!lead.nextFollowUpAt || dueAt < lead.nextFollowUpAt) {
+      await this.leads.setNextFollowUp(leadId, dueAt);
+    }
+
+    return toFollowUp(record);
+  }
+
+  /** Works out what a hand-raised follow-up is about, and which lead it belongs to. */
+  private async subjectOf(input: FollowUpCreateRequest): Promise<{
+    kind: FollowUpKind;
+    leadId: string;
+    proposalId: string | null;
+    invoiceId: string | null;
+  }> {
+    if (input.invoiceId) {
+      const invoice = await this.prisma.invoice.findUnique({
+        where: { id: input.invoiceId },
+        select: { leadId: true },
+      });
+      if (!invoice) throw new NotFoundException('That invoice no longer exists.');
+      return {
+        kind: 'INVOICE',
+        leadId: invoice.leadId,
+        proposalId: null,
+        invoiceId: input.invoiceId,
+      };
+    }
+
+    if (input.proposalId) {
+      const proposal = await this.prisma.proposal.findUnique({
+        where: { id: input.proposalId },
+        select: { leadId: true },
+      });
+      if (!proposal) throw new NotFoundException('That proposal no longer exists.');
+      return {
+        kind: 'PROPOSAL',
+        leadId: proposal.leadId,
+        proposalId: input.proposalId,
+        invoiceId: null,
+      };
+    }
+
+    if (!input.leadId) {
+      throw new BadRequestException('Say what this follow-up is about.');
+    }
+
+    return { kind: 'LEAD', leadId: input.leadId, proposalId: null, invoiceId: null };
   }
 
   // --- Completing ----------------------------------------------------------
@@ -217,8 +333,9 @@ export class FollowUpsService {
     });
 
     // A customer who is ready to book, or has said no, should not keep
-    // generating reminders.
-    if ((CLOSING_OUTCOMES as readonly string[]).includes(input.outcome)) {
+    // generating reminders. Only a scheduled proposal chase has a remaining
+    // schedule to drop; a hand-raised follow-up is a single job.
+    if (record.proposalId && (CLOSING_OUTCOMES as readonly string[]).includes(input.outcome)) {
       const cancelled = await this.cancelRemaining(
         record.proposalId,
         `Closed by follow-up ${record.sequence}: ${outcomeLabel(input.outcome)}`,

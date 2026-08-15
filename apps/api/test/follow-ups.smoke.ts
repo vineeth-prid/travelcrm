@@ -532,6 +532,64 @@ async function main(): Promise<void> {
     .send({ to: 'not-an-email' })
     .expect(400);
 
+  // --- raising one by hand --------------------------------------------------
+  //
+  // Schedules only ever chase proposals. Chasing an unanswered enquiry, or an
+  // unpaid invoice, is the same job and had nowhere to be recorded.
+  const onLead = await request(http)
+    .post(`${base}/follow-ups`)
+    .set('Cookie', admin)
+    .send({ leadId, dueAt: '2026-09-01', reason: 'Call back after they speak to their family' })
+    .expect(201);
+
+  assert.equal(onLead.body.kind, 'LEAD');
+  assert.equal(onLead.body.proposalId, null);
+  assert.equal(onLead.body.sequence, 0, 'zero says nobody scheduled it');
+  assert.equal(onLead.body.reason, 'Call back after they speak to their family');
+  assert.equal(onLead.body.leadId, leadId);
+
+  const onProposal = await request(http)
+    .post(`${base}/follow-ups`)
+    .set('Cookie', admin)
+    .send({ proposalId, dueAt: '2026-09-02', reason: 'Chase the hotel change' })
+    .expect(201);
+
+  assert.equal(onProposal.body.kind, 'PROPOSAL');
+  assert.equal(onProposal.body.proposalId, proposalId);
+  assert.equal(onProposal.body.leadId, leadId, 'the lead is derived, never passed');
+
+  // A follow-up has to be about something.
+  await request(http)
+    .post(`${base}/follow-ups`)
+    .set('Cookie', admin)
+    .send({ dueAt: '2026-09-03', reason: 'Nothing in particular' })
+    .expect(400);
+
+  // --- filtering by what is being chased ------------------------------------
+  const leadKind = await request(http)
+    .get(`${base}/follow-ups`)
+    .query({ kind: 'LEAD' })
+    .set('Cookie', admin)
+    .expect(200);
+
+  assert.ok((leadKind.body as { kind: string }[]).every((row) => row.kind === 'LEAD'));
+  assert.equal((leadKind.body as unknown[]).length, 1);
+
+  // --- searching by the customer's name -------------------------------------
+  const byName = await request(http)
+    .get(`${base}/follow-ups`)
+    .query({ search: 'priya' })
+    .set('Cookie', admin)
+    .expect(200);
+  assert.ok((byName.body as unknown[]).length > 0, 'search is case-insensitive');
+
+  const noMatch = await request(http)
+    .get(`${base}/follow-ups`)
+    .query({ search: 'nobody-by-that-name' })
+    .set('Cookie', admin)
+    .expect(200);
+  assert.equal((noMatch.body as unknown[]).length, 0);
+
   await app.close();
   console.log('All follow-up smoke checks passed.');
 }

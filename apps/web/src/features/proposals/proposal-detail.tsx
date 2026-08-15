@@ -18,12 +18,13 @@ import {
   SelectValue,
   toast,
 } from '@travel-crm/ui';
-import { Download, FileText, Lock, Pencil, Send } from 'lucide-react';
+import { CalendarPlus, Download, FileText, Lock, Pencil, Send } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 
-import { useLead } from '@/features/leads/use-leads';
+import { ScheduleDialog } from '@/features/follow-ups/schedule-dialog';
 import { formatDateTime, formatDay, formatMoney } from '@/features/leads/lead-labels';
+import { useLead } from '@/features/leads/use-leads';
 import { api } from '@/lib/api';
 import { ProposalForm } from './proposal-form';
 import { marginVariant, PROPOSAL_STATUS_LABELS, PROPOSAL_STATUS_VARIANTS } from './proposal-labels';
@@ -65,6 +66,7 @@ function Loaded({ proposal, versions }: { proposal: Proposal; versions: Proposal
   const submit = useSubmitProposal(proposal.leadId, proposal.id);
   const setStatus = useSetProposalStatus(proposal.leadId, proposal.id);
   const [editing, setEditing] = useState(false);
+  const [scheduling, setScheduling] = useState(false);
 
   const current = proposal.currentVersion;
   const locked = LOCKED_PROPOSAL_STATUSES.includes(proposal.status);
@@ -123,6 +125,10 @@ function Loaded({ proposal, versions }: { proposal: Proposal; versions: Proposal
       description={`${proposal.reference} · ${proposal.customerName} · version ${current.version} of ${proposal.versionCount}`}
       actions={
         <>
+          <Button variant="secondary" onClick={() => setScheduling(true)}>
+            <CalendarPlus aria-hidden />
+            Record follow-up
+          </Button>
           <Button variant="secondary" onClick={() => setEditing(true)}>
             <Pencil aria-hidden />
             {locked ? 'Revise' : 'Edit'}
@@ -327,6 +333,13 @@ function Loaded({ proposal, versions }: { proposal: Proposal; versions: Proposal
           </Card>
         </div>
       </div>
+
+      <ScheduleDialog
+        open={scheduling}
+        onClose={() => setScheduling(false)}
+        subject={{ proposalId: proposal.id }}
+        subjectLabel={proposal.reference}
+      />
     </PageContainer>
   );
 }

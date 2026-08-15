@@ -1,11 +1,13 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
+import { useQuery } from '@tanstack/react-query';
 import {
   CURRENCIES,
   grossProfit,
   marginPercent,
   proposalSchema,
+  type DocumentTemplate,
   type Lead,
   type Proposal,
   type ProposalInput,
@@ -35,14 +37,16 @@ import { useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 
 import { formatMoney } from '@/features/leads/lead-labels';
+import { api } from '@/lib/api';
+import { queryKeys } from '@/lib/query-keys';
 import { applyApiErrors } from '@/lib/form-errors';
 import { marginVariant } from './proposal-labels';
 import { useCreateProposal, useReviseProposal, useUpdateProposal } from './use-proposals';
 
 /** Fourteen days is the usual window for a holiday quotation. */
-function defaultValidUntil(): string {
+function defaultValidUntil(days: number): string {
   const date = new Date();
-  date.setDate(date.getDate() + 14);
+  date.setDate(date.getDate() + days);
   return date.toISOString().slice(0, 10);
 }
 
@@ -50,7 +54,7 @@ function defaultValidUntil(): string {
  * A new proposal starts from what the lead already says, so the consultant is
  * correcting a draft rather than retyping the enquiry.
  */
-function fromLead(lead: Lead): ProposalInput {
+function fromLead(lead: Lead, template?: DocumentTemplate): ProposalInput {
   return {
     title: lead.destination ? `${lead.destination} Holiday` : '',
     destination: lead.destination ?? '',
@@ -60,13 +64,13 @@ function fromLead(lead: Lead): ProposalInput {
     children: lead.children === null ? '' : String(lead.children),
     executiveSummary: lead.requirementSummary ?? '',
     itinerary: '',
-    inclusions: '',
-    exclusions: '',
+    inclusions: template?.inclusions ?? '',
+    exclusions: template?.exclusions ?? '',
     hotelInfo: lead.hotelCategory ?? '',
     transportInfo: lead.transportRequired ? 'Airport transfers included.' : '',
     activities: lead.activityRequirements ?? '',
-    terms: '',
-    validUntil: defaultValidUntil(),
+    terms: template?.terms ?? '',
+    validUntil: defaultValidUntil(template?.validityDays ?? 14),
     currency: (lead.currency as ProposalInput['currency']) ?? 'INR',
     sellingPrice: '',
     actualCost: '',
@@ -115,6 +119,18 @@ export function ProposalForm({ lead, proposal, asNewVersion, onDone }: ProposalF
   const revise = useReviseProposal(lead.id, proposal?.id ?? '');
   const [formError, setFormError] = useState('');
 
+  /**
+   * The boilerplate a new proposal starts with — terms, inclusions, exclusions
+   * and how long the quote stays valid — from Settings → Proposal template.
+   * Only for a *new* proposal: an existing one keeps whatever it was written
+   * with, whatever the template says today.
+   */
+  const template = useQuery({
+    queryKey: queryKeys.template('PROPOSAL'),
+    queryFn: ({ signal }) => api.documents.template('PROPOSAL', signal),
+    enabled: proposal === null,
+  });
+
   const {
     register,
     control,
@@ -127,6 +143,9 @@ export function ProposalForm({ lead, proposal, asNewVersion, onDone }: ProposalF
     // Revising starts from the current version too — the new one is almost
     // always the old one with a different price.
     defaultValues: proposal ? fromProposal(proposal) : fromLead(lead),
+    // `values` (not defaultValues) because the template arrives after the
+    // first render; anything already typed wins over it.
+    values: proposal || !template.data ? undefined : fromLead(lead, template.data),
   });
 
   const [sellingPrice, actualCost, currency] = watch(['sellingPrice', 'actualCost', 'currency']);

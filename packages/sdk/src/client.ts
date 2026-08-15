@@ -1,12 +1,15 @@
 import type {
   AiRequirementRequest,
   ChangePasswordRequest,
+  CompanyProfileRequest,
+  DocumentTemplateRequest,
   CustomerQuery,
   CreateUserRequest,
   ExtractedDetails,
   ResetPasswordRequest,
   UpdateUserRequest,
   FollowUpCompleteRequest,
+  FollowUpCreateRequest,
   FollowUpQuery,
   FollowUpRuleRequest,
   ExpenseCategoryRequest,
@@ -42,6 +45,7 @@ import type {
   AuditEntry,
   Exportable,
   Conversation,
+  CompanyProfile,
   CustomerDetail,
   CustomerSummary,
   ConversationSummary,
@@ -58,6 +62,8 @@ import type {
   InvoiceWithPdf,
   NotificationRecord,
   SmtpStatus,
+  DocumentTemplate,
+  TemplateKind,
   Lead,
   LeadActivity,
   LeadPage,
@@ -344,6 +350,9 @@ export class ApiClient {
     list: (query: FollowUpQuery = {}, signal?: AbortSignal) =>
       this.request<FollowUp[]>(`/follow-ups${toQuery(query)}`, { signal }),
     /** Recording the outcome is the only thing that closes a follow-up. */
+    /** Raise one by hand against a lead, a proposal or an invoice. */
+    create: (input: FollowUpCreateRequest) =>
+      this.request<FollowUp>('/follow-ups', { method: 'POST', body: input }),
     complete: (id: string, input: FollowUpCompleteRequest) =>
       this.request<FollowUp>(`/follow-ups/${id}/complete`, { method: 'POST', body: input }),
     rules: (signal?: AbortSignal) => this.request<FollowUpRule[]>('/follow-ups/rules', { signal }),
@@ -351,6 +360,24 @@ export class ApiClient {
       id
         ? this.request<FollowUpRule>(`/follow-ups/rules/${id}`, { method: 'PATCH', body: input })
         : this.request<FollowUpRule>('/follow-ups/rules', { method: 'POST', body: input }),
+  };
+
+  /**
+   * The company's own details and the boilerplate on its documents. Reading is
+   * open to everybody — the proposal form prefills from it; writing is admin.
+   */
+  readonly documents = {
+    company: (signal?: AbortSignal) =>
+      this.request<CompanyProfile>('/settings/company', { signal }),
+    saveCompany: (input: CompanyProfileRequest) =>
+      this.request<CompanyProfile>('/settings/company', { method: 'PUT', body: input }),
+    template: (kind: TemplateKind, signal?: AbortSignal) =>
+      this.request<DocumentTemplate>(`/settings/templates/${kind.toLowerCase()}`, { signal }),
+    saveTemplate: (kind: TemplateKind, input: DocumentTemplateRequest) =>
+      this.request<DocumentTemplate>(`/settings/templates/${kind.toLowerCase()}`, {
+        method: 'PUT',
+        body: input,
+      }),
   };
 
   /** Mail configuration. Admin-only, and the password is never returned. */

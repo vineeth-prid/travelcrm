@@ -71,6 +71,14 @@ function filtersFrom(query: LeadQuery): Prisma.LeadWhereInput[] {
     where.push({ createdAt: { lt: end } });
   }
 
+  // A booked enquiry belongs to the customer book, not the pipeline. It is
+  // hidden rather than deleted: `includeConverted` brings it back, and every
+  // filtered view (a stage filter, a search) still finds it, because somebody
+  // looking for a specific lead means it.
+  if (!query.includeConverted && !query.stage && !query.search) {
+    where.push({ customer: { convertedAt: null } });
+  }
+
   if (query.overdue) {
     where.push({
       nextFollowUpAt: { lt: new Date() },

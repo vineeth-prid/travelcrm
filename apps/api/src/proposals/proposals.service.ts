@@ -13,6 +13,7 @@ import type { AuthenticatedUser } from '../auth/jwt.strategy';
 import { LeadActivityService } from '../leads/lead-activity.service';
 import { FollowUpsService } from '../follow-ups/follow-ups.service';
 import { LeadsRepository, scopeFor as leadScopeFor } from '../leads/leads.repository';
+import { DocumentsService } from '../documents/documents.service';
 import { StorageService } from '../storage/storage.service';
 import { ProposalPdfService, type CustomerProposalPdfData } from './proposal-pdf.service';
 import {
@@ -40,6 +41,7 @@ export class ProposalsService {
     private readonly activities: LeadActivityService,
     private readonly pdf: ProposalPdfService,
     private readonly storage: StorageService,
+    private readonly documents: DocumentsService,
   ) {}
 
   /**
@@ -73,13 +75,46 @@ export class ProposalsService {
     };
   }
 
+  /**
+   * The boilerplate a new proposal starts with, so the consultant is editing
+   * the terms rather than remembering them. Copied into the version at
+   * creation — see DocumentTemplate for why it is copied and not referenced.
+   */
+  async defaults(): Promise<{
+    terms: string | null;
+    inclusions: string | null;
+    exclusions: string | null;
+    validityDays: number;
+  }> {
+    const template = await this.documents.template('PROPOSAL');
+    return {
+      terms: template.terms,
+      inclusions: template.inclusions,
+      exclusions: template.exclusions,
+      validityDays: template.validityDays,
+    };
+  }
+
   async create(
     leadId: string,
     input: ProposalRequest,
     actor: AuthenticatedUser,
   ): Promise<Proposal> {
     const lead = await this.visibleLead(leadId, actor);
-    const record = await this.repository.create(leadId, input, actor.id);
+    const template = await this.documents.template('PROPOSAL');
+
+    // Anything the consultant left blank falls back to the template. Anything
+    // they typed wins — the template is a starting point, not a policy.
+    const record = await this.repository.create(
+      leadId,
+      {
+        ...input,
+        terms: input.terms ?? template.terms,
+        inclusions: input.inclusions ?? template.inclusions,
+        exclusions: input.exclusions ?? template.exclusions,
+      },
+      actor.id,
+    );
 
     await this.activities.record({
       leadId,
@@ -134,7 +169,7 @@ export class ProposalsService {
       return this.withPdfUrl(record, current, actor);
     }
 
-    const document = await this.pdf.render(this.toPdfData(record, current));
+    const document = await this.pdf.render(await this.toPdfData(record, current));
     const key = objectKey(record.id, current.version);
     await this.storage.put(key, document, 'application/pdf');
     this.logger.log(`Stored proposal PDF ${key} (${document.length} bytes)`);
@@ -266,10 +301,15 @@ export class ProposalsService {
    * without somebody deciding it should. `actualCost` is right there on the
    * record and is simply not read.
    */
-  private toPdfData(
+  private async toPdfData(
     record: ProposalWithRelations,
     version: ProposalVersionWithAuthor,
-  ): CustomerProposalPdfData {
+  ): Promise<CustomerProposalPdfData> {
+    const [company, template] = await Promise.all([
+      this.documents.profile(),
+      this.documents.template('PROPOSAL'),
+    ]);
+
     return {
       reference: record.reference,
       version: version.version,
@@ -295,6 +335,9 @@ export class ProposalsService {
       currency: version.currency,
       sellingPrice: version.sellingPrice,
       validUntil: version.validUntil,
+
+      company,
+      footerNote: template.footerNote,
     };
   }
 

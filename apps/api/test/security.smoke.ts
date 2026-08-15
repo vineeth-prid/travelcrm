@@ -29,6 +29,8 @@ const ADMIN_ONLY: [method: 'get' | 'post' | 'patch' | 'put' | 'delete', path: st
   ['post', '/expenses/categories'],
   ['get', '/settings/smtp'],
   ['put', '/settings/smtp'],
+  ['put', '/settings/company'],
+  ['put', '/settings/templates/invoice'],
   ['post', '/settings/smtp/test'],
   ['get', '/settings/notifications'],
   ['get', '/follow-ups/rules'],
@@ -55,6 +57,8 @@ const AUTHENTICATED: [method: 'get' | 'post', path: string][] = [
   ['get', '/reports/performance'],
   ['get', '/ai/status'],
   ['get', '/settings/app-info'],
+  ['get', '/settings/company'],
+  ['get', '/settings/templates/proposal'],
 ];
 
 async function main(): Promise<void> {
@@ -386,6 +390,59 @@ async function main(): Promise<void> {
     assert.ok(!body.includes(hash), `${path} leaked a password hash`);
     assert.ok(!/"password"\s*:/.test(body), `${path} returned a password field`);
   }
+
+  // --- document settings ----------------------------------------------------
+  //
+  // Readable by anybody signed in — the proposal form prefills its terms from
+  // the template, and a consultant has to see the company address on the
+  // document they are about to send. Writable by administrators only.
+  await request(http).get(`${base}/settings/company`).set('Cookie', employee).expect(200);
+  await request(http)
+    .get(`${base}/settings/templates/proposal`)
+    .set('Cookie', employee)
+    .expect(200);
+
+  await request(http)
+    .put(`${base}/settings/company`)
+    .set('Cookie', employee)
+    .send({ name: 'Not Your Company' })
+    .expect(403);
+
+  await request(http)
+    .put(`${base}/settings/templates/proposal`)
+    .set('Cookie', employee)
+    .send({ validityDays: 30 })
+    .expect(403);
+
+  const savedCompany = await request(http)
+    .put(`${base}/settings/company`)
+    .set('Cookie', admin)
+    .send({
+      name: 'Tour De India Holidays',
+      phone: '+91 98765 43210',
+      bankDetails: 'A/C 001122334455 · IFSC TDIH0001',
+    })
+    .expect(200);
+  assert.equal(savedCompany.body.name, 'Tour De India Holidays');
+  assert.equal(savedCompany.body.bankDetails, 'A/C 001122334455 · IFSC TDIH0001');
+
+  const savedTemplate = await request(http)
+    .put(`${base}/settings/templates/proposal`)
+    .set('Cookie', admin)
+    .send({ terms: 'Prices are subject to availability.', validityDays: 21 })
+    .expect(200);
+  assert.equal(savedTemplate.body.terms, 'Prices are subject to availability.');
+  assert.equal(savedTemplate.body.validityDays, 21);
+
+  // Reading it back gives what was saved, not the environment's fallback.
+  const readBack = await request(http)
+    .get(`${base}/settings/templates/proposal`)
+    .set('Cookie', employee)
+    .expect(200);
+  assert.equal(readBack.body.validityDays, 21);
+
+  // There are two templates and no others.
+  await request(http).get(`${base}/settings/templates/nonsense`).set('Cookie', admin).expect(400);
 
   await app.close();
   console.log('All security smoke checks passed.');

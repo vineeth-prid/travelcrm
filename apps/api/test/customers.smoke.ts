@@ -138,6 +138,63 @@ async function main(): Promise<void> {
   // --- and not at all without a session -------------------------------------
   await request(http).get(`${base}/customers`).expect(401);
 
+  // --- searching by where they want to go -----------------------------------
+  const byDestination = await request(http)
+    .get(`${base}/customers`)
+    .query({ search: 'singapore' })
+    .set('Cookie', admin)
+    .expect(200);
+  assert.ok(
+    (byDestination.body as { id: string }[]).some((row) => row.id === customerId),
+    '"who wanted Singapore?" is a question the book should answer',
+  );
+
+  // --- an enquiry becomes a customer when the first invoice is raised -------
+  const beforeInvoice = await request(http).get(`${base}/leads`).set('Cookie', admin).expect(200);
+  const pipelineBefore = (beforeInvoice.body.leads as { id: string }[]).length;
+
+  await request(http)
+    .post(`${base}/leads/${first.body.id}/invoices`)
+    .set('Cookie', admin)
+    .send({
+      packageTitle: 'Dubai, 5 nights',
+      billingName: 'Priya Nair',
+      currency: 'INR',
+      packageAmount: '150000',
+      discountAmount: '0',
+      issueDate: '2026-08-01',
+      dueDate: '2026-08-15',
+    })
+    .expect(201);
+
+  const afterInvoice = await request(http).get(`${base}/leads`).set('Cookie', admin).expect(200);
+  assert.equal(
+    (afterInvoice.body.leads as unknown[]).length,
+    pipelineBefore - 2,
+    'both of this customer’s leads leave the pipeline once they are a customer',
+  );
+
+  const withConverted = await request(http)
+    .get(`${base}/leads`)
+    .query({ includeConverted: true })
+    .set('Cookie', admin)
+    .expect(200);
+  assert.equal(
+    (withConverted.body.leads as unknown[]).length,
+    pipelineBefore,
+    'and come back when asked for',
+  );
+
+  const booked = await request(http)
+    .get(`${base}/customers/${customerId}`)
+    .set('Cookie', admin)
+    .expect(200);
+  assert.equal(booked.body.invoices.length, 1, 'the invoice is on the customer now');
+  assert.ok(
+    (booked.body.leads as { stage: string }[]).some((lead) => lead.stage === 'WON'),
+    'billing somebody marks the enquiry won rather than leaving it open',
+  );
+
   await app.close();
   console.log('All customer smoke checks passed.');
 }

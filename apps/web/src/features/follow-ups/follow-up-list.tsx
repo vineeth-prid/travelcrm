@@ -14,7 +14,8 @@ import {
 
 interface FollowUpListProps {
   followUps: FollowUp[];
-  onComplete: (followUp: FollowUp) => void;
+  /** Omitted where the list is read-only, e.g. on a customer's page. */
+  onComplete?: (followUp: FollowUp) => void;
   /** Hidden on the lead page, where the customer is already the heading. */
   showCustomer?: boolean;
 }
@@ -72,7 +73,9 @@ export function FollowUpList({ followUps, onComplete, showCustomer = true }: Fol
 
             {/* A missed follow-up can still be recorded — the call may just have
                 happened late, and a record beats a permanent black mark. */}
-            {followUp.status === 'COMPLETED' || followUp.status === 'CANCELLED' ? null : (
+            {!onComplete ||
+            followUp.status === 'COMPLETED' ||
+            followUp.status === 'CANCELLED' ? null : (
               <Button variant="secondary" size="sm" onClick={() => onComplete(followUp)}>
                 <Check aria-hidden />
                 Record
