@@ -32,4 +32,5 @@ docker/volumes/
 .claude/settings.local.json
 .claude/proven-config.json
 .claude/.proven-config-version
-storage/
+# Only the API's own document fallback directory, not any src/storage folder.
+/apps/api/storage/
