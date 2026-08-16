@@ -16,6 +16,18 @@ interface Endpoint {
   useSSL: boolean;
 }
 
+/**
+ * Something printable out of whatever was thrown.
+ *
+ * The minio client throws `S3Error`s whose `message` is sometimes empty, which
+ * is how a broken region lookup reached the log as a bare `S3Error:` with
+ * nothing after it. The class name at least says which library failed.
+ */
+function describe(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+  return error.message || `${error.name} (no message)`;
+}
+
 function parseEndpoint(url: string): Endpoint {
   const parsed = new URL(url);
   const useSSL = parsed.protocol === 'https:';
@@ -48,6 +60,17 @@ export class StorageService implements OnModuleInit {
     const credentials = {
       accessKey: config.get('MINIO_ACCESS_KEY', { infer: true }),
       secretKey: config.get('MINIO_SECRET_KEY', { infer: true }),
+      /**
+       * Explicit, and not optional.
+       *
+       * Without a region the minio client resolves one lazily the first time
+       * it signs a URL, by calling `GET /bucket?location`. Against MinIO that
+       * round trip fails inside the client's own XML parsing and surfaces as a
+       * bare `S3Error` with no message — so every proposal PDF failed at the
+       * link stage, after the upload had already succeeded, with nothing in
+       * the log to say why. Naming the region means the call never happens.
+       */
+      region: config.get('MINIO_REGION', { infer: true }),
     };
 
     this.bucket = config.get('MINIO_BUCKET', { infer: true });
@@ -71,9 +94,7 @@ export class StorageService implements OnModuleInit {
       }
     } catch (error) {
       // Storage is only needed when a PDF is generated; do not block startup.
-      this.logger.warn(
-        `Object storage is not ready: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      this.logger.warn(`Object storage is not ready: ${describe(error)}`);
     }
   }
 
@@ -96,7 +117,7 @@ export class StorageService implements OnModuleInit {
       return;
     } catch (error) {
       this.logger.warn(
-        `Object storage rejected ${objectKey} (${error instanceof Error ? error.message : String(error)}). ` +
+        `Object storage rejected ${objectKey} (${describe(error)}). ` +
           'Writing it to local disk instead.',
       );
     }
@@ -108,24 +129,47 @@ export class StorageService implements OnModuleInit {
   }
 
   /**
-   * A link the browser can fetch. Presigned when the object is in MinIO, and
-   * an authenticated API URL when it is on local disk.
+   * A link the browser can fetch.
+   *
+   * Presigned when the object is in MinIO — that link is public, which is what
+   * channel delivery needs. If signing fails the document is not lost: the API
+   * can serve it itself, so the fallback is an authenticated `/files/…` URL
+   * rather than an error. Failing to *sign* a link must never look the same as
+   * failing to produce the document.
    */
   async presignedUrl(objectKey: string): Promise<string> {
     if (existsSync(this.localPath(objectKey))) {
       return `${this.apiUrl}/files/${objectKey}`;
     }
 
-    return this.public.presignedGetObject(this.bucket, objectKey, LINK_TTL_SECONDS);
+    try {
+      return await this.public.presignedGetObject(this.bucket, objectKey, LINK_TTL_SECONDS);
+    } catch (error) {
+      this.logger.warn(
+        `Could not presign ${objectKey} (${describe(error)}). Serving it through the API instead.`,
+      );
+      return `${this.apiUrl}/files/${objectKey}`;
+    }
   }
 
-  /** Reads back an object that was written to local disk. */
-  readLocal(objectKey: string): Promise<Buffer> {
-    return readFile(this.localPath(objectKey));
-  }
+  /**
+   * Reads an object back, wherever it lives: local disk first, then MinIO.
+   * This is what `GET /files/…` serves.
+   */
+  async read(objectKey: string): Promise<Buffer | null> {
+    if (existsSync(this.localPath(objectKey))) {
+      return readFile(this.localPath(objectKey));
+    }
 
-  hasLocal(objectKey: string): boolean {
-    return existsSync(this.localPath(objectKey));
+    try {
+      const stream = await this.internal.getObject(this.bucket, objectKey);
+      const chunks: Buffer[] = [];
+      for await (const chunk of stream) chunks.push(chunk as Buffer);
+      return Buffer.concat(chunks);
+    } catch (error) {
+      this.logger.warn(`Could not read ${objectKey}: ${describe(error)}`);
+      return null;
+    }
   }
 
   /**

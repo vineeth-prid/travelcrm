@@ -101,6 +101,13 @@ export const envSchema = z.object({
    * presigned links are signed against this host.
    */
   MINIO_PUBLIC_URL: z.string().url().default('http://localhost:9000'),
+  /**
+   * Named explicitly so the client never asks the server what region a bucket
+   * is in. That lookup fails against MinIO and takes presigned URLs — and so
+   * every PDF link — down with it. Any value works; both ends just have to
+   * agree, and MinIO answers to whatever it is told.
+   */
+  MINIO_REGION: z.string().default('us-east-1'),
   MINIO_ACCESS_KEY: z.string().default('minioadmin'),
   MINIO_SECRET_KEY: z.string().default('minioadmin'),
   MINIO_BUCKET: z.string().default('travel-crm'),

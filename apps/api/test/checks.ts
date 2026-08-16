@@ -6,13 +6,15 @@ import 'reflect-metadata';
 
 import assert from 'node:assert/strict';
 import { BadRequestException } from '@nestjs/common';
+import type { ConfigService } from '@nestjs/config';
 
 import { changePasswordSchema, leadSchema } from '@travel-crm/sdk';
 
 import { parseExtraction } from '../src/ai/extraction.parser';
 import { durationToMs } from '../src/auth/auth.service';
-import { validateEnv } from '../src/config/env';
+import { validateEnv, type Env } from '../src/config/env';
 import { ZodValidationPipe } from '../src/shared/zod';
+import { StorageService } from '../src/storage/storage.service';
 
 // --- durationToMs -----------------------------------------------------------
 assert.equal(durationToMs('30s'), 30_000);
@@ -134,6 +136,39 @@ assert.equal(parseExtraction(''), null);
       currency: 'INR',
     }).success,
   );
+}
+
+// --- object storage --------------------------------------------------------
+//
+// Both minio clients must be built with an explicit region. Without one the
+// client resolves the bucket's region lazily, the first time it signs a URL,
+// with a `GET /bucket?location` call that fails against MinIO inside the
+// client's own XML parsing — surfacing as a bare `S3Error` with no message.
+// The upload succeeds, the link does not, and every PDF appears broken.
+{
+  const ENV: Record<string, unknown> = {
+    MINIO_ACCESS_KEY: 'minioadmin',
+    MINIO_SECRET_KEY: 'minioadmin',
+    MINIO_REGION: 'ap-south-1',
+    MINIO_BUCKET: 'travel-crm',
+    MINIO_ENDPOINT: 'http://minio:9000',
+    MINIO_PUBLIC_URL: 'http://localhost:9000',
+    STORAGE_DIR: 'storage',
+    API_URL: 'http://localhost:3001',
+  };
+
+  const config = { get: (key: string) => ENV[key] } as unknown as ConfigService<Env, true>;
+  const storage = new StorageService(config);
+
+  // Reaching into the clients on purpose: the region is the whole point, and
+  // it is not otherwise observable without a server to talk to.
+  const clients = storage as unknown as {
+    internal: { region?: string };
+    public: { region?: string };
+  };
+
+  assert.equal(clients.internal.region, 'ap-south-1', 'the upload client must know its region');
+  assert.equal(clients.public.region, 'ap-south-1', 'and so must the one that signs links');
 }
 
 console.log('All API checks passed.');
