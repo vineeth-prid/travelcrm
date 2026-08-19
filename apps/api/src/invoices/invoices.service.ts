@@ -155,11 +155,22 @@ export class InvoicesService {
     if (input.proposalId) {
       const proposal = await this.prisma.proposal.findUnique({
         where: { id: input.proposalId },
-        select: { leadId: true },
+        select: { leadId: true, reference: true, invoices: { select: { id: true, status: true } } },
       });
+
       // A bill can only cite a proposal belonging to the same customer.
       if (!proposal || proposal.leadId !== leadId) {
         throw new BadRequestException('That proposal does not belong to this lead.');
+      }
+
+      // And only once. Two invoices against one proposal means the customer
+      // has been billed twice for the same trip, which is the kind of mistake
+      // that is found by the customer rather than by us.
+      const alreadyBilled = proposal.invoices.some((invoice) => invoice.status !== 'CANCELLED');
+      if (alreadyBilled) {
+        throw new BadRequestException(
+          `Proposal ${proposal.reference} has already been invoiced. Cancel that invoice first, or raise this one without citing a proposal.`,
+        );
       }
     }
 
@@ -404,7 +415,7 @@ export class InvoicesService {
 
     return {
       dueDays: template.validityDays,
-      taxRateBps: this.config.get('INVOICE_DEFAULT_TAX_BPS', { infer: true }),
+      taxRateBps: template.taxRateBps,
       paymentTerms:
         template.paymentTerms ?? this.config.get('INVOICE_PAYMENT_TERMS', { infer: true }),
       notes: template.terms,

@@ -19,7 +19,7 @@ import request from 'supertest';
 process.env.NODE_ENV = 'test';
 process.env.DATABASE_URL = 'postgresql://user:pass@localhost:5432/db';
 process.env.JWT_SECRET = 'smoke-test-secret-that-is-long-enough';
-process.env.LOG_LEVEL = 'error';
+process.env.LOG_LEVEL = 'log';
 process.env.COMPANY_NAME = 'Tour De India Holidays';
 process.env.APP_URL = 'https://crm.tourdeindia.test';
 
@@ -185,6 +185,16 @@ async function main(): Promise<void> {
     .set('Cookie', employee)
     .expect(400);
   assert.equal(prisma.followUps.length, 4, 'the schedule is not duplicated');
+
+  // While that schedule is still running, a consultant may not add to it:
+  // two people chasing the same customer on overlapping days is what the
+  // schedule exists to prevent.
+  const tooEarly = await request(http)
+    .post(`${base}/follow-ups`)
+    .set('Cookie', employee)
+    .send({ proposalId, dueAt: '2027-01-05', reason: 'Chase the hotel change' })
+    .expect(400);
+  assert.match(tooEarly.body.message, /scheduled follow-ups?/i);
 
   // --- listing --------------------------------------------------------------
   await request(http).get(`${base}/follow-ups`).expect(401);
@@ -544,10 +554,16 @@ async function main(): Promise<void> {
 
   assert.equal(onLead.body.kind, 'LEAD');
   assert.equal(onLead.body.proposalId, null);
-  assert.equal(onLead.body.sequence, 0, 'zero says nobody scheduled it');
+  assert.equal(
+    onLead.body.sequence,
+    1,
+    'it continues the numbering rather than starting again — to the consultant reading the list it is the next chase, not a different kind of thing',
+  );
   assert.equal(onLead.body.reason, 'Call back after they speak to their family');
   assert.equal(onLead.body.leadId, leadId);
 
+  // By now the sweep has run and the schedule is behind us, so the consultant
+  // takes over and sets their own dates.
   const onProposal = await request(http)
     .post(`${base}/follow-ups`)
     .set('Cookie', admin)
@@ -557,6 +573,7 @@ async function main(): Promise<void> {
   assert.equal(onProposal.body.kind, 'PROPOSAL');
   assert.equal(onProposal.body.proposalId, proposalId);
   assert.equal(onProposal.body.leadId, leadId, 'the lead is derived, never passed');
+  assert.ok(onProposal.body.sequence > 1, 'and carries on from the schedule it follows');
 
   // A follow-up has to be about something.
   await request(http)
@@ -574,6 +591,74 @@ async function main(): Promise<void> {
 
   assert.ok((leadKind.body as { kind: string }[]).every((row) => row.kind === 'LEAD'));
   assert.equal((leadKind.body as unknown[]).length, 1);
+
+  // --- the shift ------------------------------------------------------------
+  //
+  // A consultant who speaks to the customer and sets the next call for a
+  // different day does not want the remaining schedule firing on the old
+  // dates. Everything still to come moves by the same number of days, so the
+  // gaps the schedule was written with survive.
+  {
+    const lead2 = await request(http)
+      .post(`${base}/leads`)
+      .query({ allowDuplicate: true })
+      .set('Cookie', employee)
+      .send({ customerName: 'Arun Menon', phone: '+91 90000 11111', destination: 'Bali' })
+      .expect(201);
+
+    const proposal2 = await request(http)
+      .post(`${base}/leads/${lead2.body.id}/proposals`)
+      .set('Cookie', employee)
+      .send(PROPOSAL_BODY)
+      .expect(201);
+
+    await request(http)
+      .post(`${base}/proposals/${proposal2.body.id}/generate`)
+      .set('Cookie', employee)
+      .expect(200);
+    await request(http)
+      .post(`${base}/proposals/${proposal2.body.id}/submit`)
+      .set('Cookie', employee)
+      .expect(200);
+
+    const scheduled = prisma.followUps
+      .filter((row) => row.proposalId === proposal2.body.id)
+      .sort((a, b) => a.dueAt.getTime() - b.dueAt.getTime());
+    // However many the current rule says — an earlier block in this file
+    // edits the schedule, and what matters here is the shifting, not the count.
+    assert.ok(scheduled.length >= 2, 'the proposal has a schedule to shift');
+
+    const gapsBefore = scheduled
+      .slice(1)
+      .map((row, index) => row.dueAt.getTime() - scheduled[index]!.dueAt.getTime());
+
+    // Two days earlier than the next one is due. The time is copied out
+    // rather than held by reference: the stub mutates its rows in place, so a
+    // reference would quietly follow the very change being measured.
+    const nextDueBefore = scheduled[0]!.dueAt.getTime();
+    const earlier = new Date(nextDueBefore - 2 * DAY).toISOString().slice(0, 10);
+
+    await request(http)
+      .post(`${base}/follow-ups`)
+      .set('Cookie', employee)
+      .send({ leadId: lead2.body.id, dueAt: earlier, reason: 'Customer asked us to call back' })
+      .expect(201);
+
+    const shifted = prisma.followUps
+      .filter((row) => row.proposalId === proposal2.body.id)
+      .sort((a, b) => a.dueAt.getTime() - b.dueAt.getTime());
+
+    const gapsAfter = shifted
+      .slice(1)
+      .map((row, index) => row.dueAt.getTime() - shifted[index]!.dueAt.getTime());
+
+    assert.deepEqual(gapsAfter, gapsBefore, 'the gaps between them are unchanged');
+    assert.equal(
+      Math.round((shifted[0]!.dueAt.getTime() - nextDueBefore) / DAY),
+      -2,
+      'and the whole run moved by the two days the consultant brought it forward',
+    );
+  }
 
   // --- searching by the customer's name -------------------------------------
   const byName = await request(http)

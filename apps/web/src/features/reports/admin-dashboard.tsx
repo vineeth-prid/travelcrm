@@ -22,10 +22,18 @@ import { formatMoney } from '@/features/leads/lead-labels';
 import { PerformanceTable } from './performance-table';
 import { useDashboard, usePerformance } from './use-reports';
 
+/**
+ * The first of the current month.
+ *
+ * A dashboard that opens on the last twelve months answers "how are we doing
+ * overall", which is not the question anybody asks first thing. It rolls by
+ * itself: the value is computed on each render, so on the 1st it moves.
+ */
 function defaultFrom(): string {
   const date = new Date();
-  date.setUTCMonth(date.getUTCMonth() - 11, 1);
-  return date.toISOString().slice(0, 10);
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1))
+    .toISOString()
+    .slice(0, 10);
 }
 
 /**

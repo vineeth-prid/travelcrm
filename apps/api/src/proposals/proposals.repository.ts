@@ -15,6 +15,7 @@ function versionData(input: ProposalRequest) {
     travelEnd: fromDateOnly(input.travelEnd),
     adults: input.adults ?? null,
     children: input.children ?? null,
+    childAges: input.childAges ?? [],
     executiveSummary: input.executiveSummary ?? null,
     itinerary: input.itinerary ?? null,
     inclusions: input.inclusions ?? null,

@@ -25,9 +25,9 @@ const TYPE_LABELS: Record<NotificationRecord['type'], string> = {
   FOLLOW_UP_DUE: 'Follow-up due',
   FOLLOW_UP_MISSED: 'Follow-up missed',
   FOLLOW_UP_ESCALATED: 'Escalation',
+  PROPOSAL_SENT: 'Proposal sent to customer',
   LEAD_ASSIGNED: 'Lead assigned',
 };
-
 const STATUS_VARIANT: Record<NotificationRecord['status'], 'success' | 'warning' | 'danger'> = {
   SENT: 'success',
   PENDING: 'warning',

@@ -14,6 +14,9 @@ import { LeadActivityService } from '../leads/lead-activity.service';
 import { FollowUpsService } from '../follow-ups/follow-ups.service';
 import { LeadsRepository, scopeFor as leadScopeFor } from '../leads/leads.repository';
 import { DocumentsService } from '../documents/documents.service';
+import { dedupeKeyFor, NotificationService } from '../notifications/notification.service';
+import { proposalSent } from '../notifications/templates';
+import { longDate, money } from '../shared/pdf-brand';
 import { StorageService } from '../storage/storage.service';
 import { ProposalPdfService, type CustomerProposalPdfData } from './proposal-pdf.service';
 import {
@@ -25,6 +28,28 @@ import {
   type ProposalWithRelations,
 } from './proposals.mappers';
 import { ProposalsRepository } from './proposals.repository';
+
+/** "10 — 15 December 2026", or an honest "to be confirmed". */
+function describeDates(start: Date | null, end: Date | null): string {
+  if (!start && !end) return 'To be confirmed';
+  if (start && end) return `${longDate(start)} — ${longDate(end)}`;
+  return longDate((start ?? end)!);
+}
+
+/** "2 adults + 2 children (8, 12)". */
+function describeTravellers(
+  adults: number | null,
+  children: number | null,
+  childAges: number[],
+): string {
+  const parts: string[] = [];
+  if (adults) parts.push(`${adults} ${adults === 1 ? 'adult' : 'adults'}`);
+  if (children) {
+    const ages = childAges.length > 0 ? ` (${childAges.join(', ')})` : '';
+    parts.push(`${children} ${children === 1 ? 'child' : 'children'}${ages}`);
+  }
+  return parts.length > 0 ? parts.join(' + ') : 'To be confirmed';
+}
 
 function objectKey(proposalId: string, version: number): string {
   return `proposals/${proposalId}/v${version}.pdf`;
@@ -42,6 +67,7 @@ export class ProposalsService {
     private readonly pdf: ProposalPdfService,
     private readonly storage: StorageService,
     private readonly documents: DocumentsService,
+    private readonly notifications: NotificationService,
   ) {}
 
   /**
@@ -186,6 +212,68 @@ export class ProposalsService {
     return this.withPdfUrl(withStatus, currentVersionOf(withStatus), actor);
   }
 
+  /**
+   * Sends the proposal to the customer.
+   *
+   * Submitting used to record the fact and send nothing, on the reasoning that
+   * delivery was the consultant's over whichever channel they were already
+   * using. In practice people press Submit and expect the customer to receive
+   * it, so it now does both: the record is the important half, and the email
+   * is best-effort.
+   *
+   * Never throws. A customer with no email address, or an agency that has not
+   * configured SMTP, must not stop a proposal being marked as sent — the
+   * notification log says what happened either way.
+   */
+  private async emailToCustomer(
+    record: ProposalWithRelations,
+    version: ProposalVersionWithAuthor,
+    actor: AuthenticatedUser,
+  ): Promise<void> {
+    const email = record.lead.customer.email;
+
+    if (!email) {
+      this.logger.log(
+        `Proposal ${record.reference} submitted with no customer email on file; nothing sent.`,
+      );
+      return;
+    }
+
+    try {
+      const company = await this.documents.profile();
+      const pdfUrl = version.pdfPath ? await this.storage.presignedUrl(version.pdfPath) : null;
+
+      await this.notifications.send({
+        type: 'PROPOSAL_SENT',
+        // Not a member of staff: the id is null, and the log still records
+        // where it went.
+        recipient: { id: null, email, name: record.lead.customer.name },
+        // Keyed on the version, so re-submitting the same one does not send a
+        // second copy but a revision does.
+        dedupeKey: dedupeKeyFor('PROPOSAL_SENT', record.id, String(version.version)),
+        email: proposalSent({
+          companyName: company.name,
+          customerName: record.lead.customer.name,
+          consultantName: actor.name,
+          destination: version.destination,
+          travelDates: describeDates(version.travelStart, version.travelEnd),
+          travellers: describeTravellers(version.adults, version.children, version.childAges),
+          proposalReference: record.reference,
+          proposalValue: money(version.currency, version.sellingPrice),
+          validUntil: longDate(version.validUntil),
+          pdfUrl,
+        }),
+      });
+    } catch (error) {
+      // Logged, not thrown: the proposal *was* submitted.
+      this.logger.warn(
+        `Proposal ${record.reference} was submitted but the email failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
   /** A link to a specific historical version's stored PDF. */
   async versionPdf(
     id: string,
@@ -246,6 +334,8 @@ export class ProposalsService {
       assignedToId: record.lead.assignedToId,
       submittedAt,
     });
+
+    await this.emailToCustomer(record, current, actor);
 
     return toProposal(updated, canSeeFinancials(actor, updated.lead));
   }
@@ -322,6 +412,7 @@ export class ProposalsService {
       travelEnd: version.travelEnd,
       adults: version.adults,
       children: version.children,
+      childAges: version.childAges,
 
       executiveSummary: version.executiveSummary,
       itinerary: version.itinerary,

@@ -337,6 +337,9 @@ model ProposalVersion {
   travelEnd        DateTime?
   adults           Int?
   children         Int?
+  /// One entry per child, in years. Carried from the lead: a quote for two
+  /// children aged 3 and 15 is not the same quote.
+  childAges        Int[]
   executiveSummary String?
   itinerary        String?
   inclusions       String?
@@ -737,6 +740,8 @@ enum NotificationType {
   FOLLOW_UP_DUE
   FOLLOW_UP_MISSED
   FOLLOW_UP_ESCALATED
+  /// The proposal emailed to the customer when it is submitted.
+  PROPOSAL_SENT
   LEAD_ASSIGNED
 }
 
@@ -840,6 +845,11 @@ model DocumentTemplate {
 
   /// Proposal: days a quote stays valid. Invoice: days until payment is due.
   validityDays Int @default(14)
+
+  /// Invoices only. What a new invoice starts at, in basis points: 500 is 5%,
+  /// 1800 is 18%. Null means no tax. Every invoice can still override it —
+  /// the rate depends on what is being sold.
+  taxRateBps Int?
 
   updatedAt DateTime @updatedAt
 

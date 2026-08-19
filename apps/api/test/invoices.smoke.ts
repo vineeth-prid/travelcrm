@@ -461,6 +461,38 @@ async function main(): Promise<void> {
     .expect(400);
   assert.match(wrongProposal.body.message, /does not belong to this lead/i);
 
+  // --- one invoice per proposal ---------------------------------------------
+  //
+  // Two invoices citing one proposal means the customer has been billed twice
+  // for the same trip — the kind of mistake found by the customer rather than
+  // by us.
+  {
+    const proposal = await request(http)
+      .post(`${base}/leads/${leadId}/proposals`)
+      .set('Cookie', employee)
+      .send({
+        title: 'Dubai, billed once',
+        validUntil: '2027-06-30',
+        currency: 'INR',
+        sellingPrice: '150000',
+        actualCost: '120000',
+      })
+      .expect(201);
+
+    await request(http)
+      .post(`${base}/leads/${leadId}/invoices`)
+      .set('Cookie', employee)
+      .send({ ...INVOICE_BODY, proposalId: proposal.body.id })
+      .expect(201);
+
+    const secondBill = await request(http)
+      .post(`${base}/leads/${leadId}/invoices`)
+      .set('Cookie', employee)
+      .send({ ...INVOICE_BODY, proposalId: proposal.body.id })
+      .expect(400);
+    assert.match(secondBill.body.message, /already been invoiced/i);
+  }
+
   // --- missing invoice -------------------------------------------------------
   await request(http)
     .get(`${base}/invoices/11111111-2222-4333-8444-555555555555`)

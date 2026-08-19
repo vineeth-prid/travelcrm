@@ -78,6 +78,26 @@ function contactLine(company: CompanyProfile): string | null {
   return parts.length > 0 ? parts.join('  ·  ') : null;
 }
 
+/**
+ * One type scale for the whole document.
+ *
+ * Sizes were picked per block before, which is why the same kind of thing —
+ * a label, a total, a line of body text — came out at 8, 8.5 and 9pt in
+ * different places on the same page.
+ */
+const SIZE = {
+  title: 26,
+  company: 17,
+  total: 16,
+  heading: 13,
+  subheading: 12,
+  lead: 11,
+  body: 9.5,
+  small: 8.5,
+  label: 8,
+  footer: 7.5,
+} as const;
+
 const METHOD_LABELS: Record<string, string> = {
   BANK_TRANSFER: 'Bank transfer',
   UPI: 'UPI',
@@ -143,7 +163,7 @@ export class InvoicePdfService {
 
     if (logo) {
       try {
-        doc.image(logo, MARGIN, MARGIN, { fit: [160, 52] });
+        doc.image(logo, MARGIN, MARGIN - 6, { fit: [210, 68] });
       } catch (error) {
         this.logger.warn(`Could not render the company logo: ${String(error)}`);
       }
@@ -151,14 +171,14 @@ export class InvoicePdfService {
       doc
         .fillColor(BRAND.slate)
         .font('brand-heading-bold')
-        .fontSize(17)
+        .fontSize(SIZE.company)
         .text(data.company.name, MARGIN, MARGIN + 12);
     }
 
     doc
       .fillColor(BRAND.teal)
       .font('brand-heading-bold')
-      .fontSize(26)
+      .fontSize(SIZE.title)
       .text('INVOICE', PAGE_WIDTH - MARGIN - 220, MARGIN + 2, { width: 220, align: 'right' });
 
     const rows: [string, string][] = [
@@ -172,12 +192,12 @@ export class InvoicePdfService {
       doc
         .fillColor(MUTED)
         .font('brand-body')
-        .fontSize(8.5)
+        .fontSize(SIZE.small)
         .text(label, PAGE_WIDTH - MARGIN - 220, y, { width: 120, align: 'right' });
       doc
         .fillColor(BRAND.slate)
         .font('brand-body-bold')
-        .fontSize(9.5)
+        .fontSize(SIZE.body)
         .text(value, PAGE_WIDTH - MARGIN - 96, y - 1, { width: 96, align: 'right' });
       y += 15;
     }
@@ -194,7 +214,7 @@ export class InvoicePdfService {
       doc
         .fillColor(MUTED)
         .font('brand-body')
-        .fontSize(8)
+        .fontSize(SIZE.label)
         .text(title.toUpperCase(), x, top, { width: columnWidth, characterSpacing: 1 });
 
       let cursor = top + 13;
@@ -204,7 +224,7 @@ export class InvoicePdfService {
         doc
           .fillColor(BRAND.slate)
           .font(index === 0 ? 'brand-body-bold' : 'brand-body')
-          .fontSize(index === 0 ? 11 : 9.5)
+          .fontSize(index === 0 ? SIZE.lead : SIZE.body)
           .text(line, x, cursor, { width: columnWidth });
         cursor = doc.y + 2;
       });
@@ -218,7 +238,7 @@ export class InvoicePdfService {
         data.company.name,
         contactLine(data.company),
         data.company.address,
-        data.company.taxId ? `Tax ID: ${data.company.taxId}` : null,
+        data.company.taxId ? `GST: ${data.company.taxId}` : null,
       ],
       MARGIN,
     );
@@ -230,7 +250,7 @@ export class InvoicePdfService {
         data.billingAddress,
         data.billingPhone,
         data.billingEmail,
-        data.billingTaxId ? `Tax ID: ${data.billingTaxId}` : null,
+        data.billingTaxId ? `GST: ${data.billingTaxId}` : null,
       ],
       MARGIN + CONTENT_WIDTH / 2 + 12,
     );
@@ -244,13 +264,13 @@ export class InvoicePdfService {
     doc
       .fillColor(MUTED)
       .font('brand-body')
-      .fontSize(8)
+      .fontSize(SIZE.label)
       .text('DESCRIPTION', MARGIN, doc.y, { characterSpacing: 1 });
 
     doc
       .fillColor(BRAND.slate)
       .font('brand-heading')
-      .fontSize(13)
+      .fontSize(SIZE.heading)
       .text(data.packageTitle, MARGIN, doc.y + 4, { width: CONTENT_WIDTH });
 
     const facts = [
@@ -264,7 +284,7 @@ export class InvoicePdfService {
       doc
         .fillColor(MUTED)
         .font('brand-body')
-        .fontSize(9.5)
+        .fontSize(SIZE.body)
         .text(facts.join(' · '), MARGIN, doc.y + 3, { width: CONTENT_WIDTH });
     }
 
@@ -272,7 +292,7 @@ export class InvoicePdfService {
       doc
         .fillColor(BRAND.slate)
         .font('brand-body')
-        .fontSize(9.5)
+        .fontSize(SIZE.body)
         .text(data.description.trim(), MARGIN, doc.y + 6, { width: CONTENT_WIDTH, lineGap: 2.5 });
     }
 
@@ -314,7 +334,7 @@ export class InvoicePdfService {
     // Only shown when tax actually applies. A "Tax: 0" line on a document for a
     // service that is not taxed invites a question that has no good answer.
     if (data.taxRateBps !== null && data.taxRateBps > 0) {
-      line(`Tax (${percent(data.taxRateBps)})`, money(data.currency, data.taxAmount));
+      line(`GST (${percent(data.taxRateBps)})`, money(data.currency, data.taxAmount));
     }
 
     // The total, in the brand accent — the one thing that must be unmissable.
@@ -327,7 +347,7 @@ export class InvoicePdfService {
       .text('TOTAL DUE', labelX, y + 10, { width: 140, align: 'right' });
     doc
       .font('brand-heading-bold')
-      .fontSize(16)
+      .fontSize(SIZE.total)
       .text(money(data.currency, data.totalAmount), valueX, y + 20, { width, align: 'right' });
 
     doc.y = y + 42 + 14;
@@ -344,7 +364,7 @@ export class InvoicePdfService {
       doc
         .fillColor(BRAND.slate)
         .font('brand-body')
-        .fontSize(9.5)
+        .fontSize(SIZE.body)
         .text(
           `${longDate(payment.paidAt)} · ${METHOD_LABELS[payment.method] ?? payment.method}${
             payment.reference ? ` · ${payment.reference}` : ''
@@ -371,7 +391,7 @@ export class InvoicePdfService {
     doc
       .fillColor(MUTED)
       .font('brand-body')
-      .fontSize(9.5)
+      .fontSize(SIZE.body)
       .text('Paid to date', labelX, doc.y, { width: 140, align: 'right' });
     doc
       .fillColor(BRAND.slate)
@@ -385,7 +405,7 @@ export class InvoicePdfService {
     doc
       .fillColor(BRAND.teal)
       .font('brand-body-bold')
-      .fontSize(11)
+      .fontSize(SIZE.lead)
       .text('Balance outstanding', labelX, doc.y, { width: 140, align: 'right' });
     doc.text(money(data.currency, data.outstanding), PAGE_WIDTH - MARGIN - 150, doc.y - 13, {
       width: 150,
@@ -410,7 +430,7 @@ export class InvoicePdfService {
       doc
         .fillColor(BRAND.slate)
         .font('brand-body')
-        .fontSize(9.5)
+        .fontSize(SIZE.body)
         .text(bank, MARGIN, doc.y, { width: CONTENT_WIDTH, lineGap: 2.5 });
       doc.y += 6;
     }
@@ -419,7 +439,7 @@ export class InvoicePdfService {
       doc
         .fillColor(MUTED)
         .font('brand-body')
-        .fontSize(9)
+        .fontSize(SIZE.body)
         .text(data.paymentTerms, MARGIN, doc.y, { width: CONTENT_WIDTH, lineGap: 2 });
       doc.y += 6;
     }
@@ -433,7 +453,7 @@ export class InvoicePdfService {
     doc
       .fillColor(BRAND.slate)
       .font('brand-body')
-      .fontSize(9)
+      .fontSize(SIZE.body)
       .text(data.notes.trim(), MARGIN, doc.y, { width: CONTENT_WIDTH, lineGap: 2.5 });
     doc.y += 10;
   }
@@ -442,7 +462,7 @@ export class InvoicePdfService {
     doc
       .fillColor(BRAND.slate)
       .font('brand-heading')
-      .fontSize(12)
+      .fontSize(SIZE.subheading)
       .text(title, MARGIN, doc.y, { width: CONTENT_WIDTH });
 
     const y = doc.y + 4;
@@ -461,6 +481,14 @@ export class InvoicePdfService {
     doc.y = y + 14;
   }
 
+  /**
+   * Makes room for a block, or starts a page if there is not enough.
+   *
+   * Called *after* the caller has decided it has something to draw. It used to
+   * be called first, which is how an invoice with no payment details and no
+   * terms still ended with a blank page: the reservation was made, the block
+   * then rendered nothing, and the empty page was already there.
+   */
   private space(doc: PDFKit.PDFDocument, needed: number): void {
     if (doc.y + needed > CONTENT_BOTTOM) {
       doc.addPage();
@@ -476,6 +504,12 @@ export class InvoicePdfService {
     for (let index = 0; index < range.count; index += 1) {
       doc.switchToPage(range.start + index);
 
+      // The footer sits below the bottom margin by design. Without this,
+      // pdfkit treats writing there as running out of room and helpfully
+      // starts a new page — which is where the blank last page came from.
+      const bottomMargin = doc.page.margins.bottom;
+      doc.page.margins.bottom = 0;
+
       const y = PAGE_HEIGHT - MARGIN - 26;
       doc
         .strokeColor(RULE)
@@ -487,7 +521,7 @@ export class InvoicePdfService {
       doc
         .fillColor(MUTED)
         .font('brand-body')
-        .fontSize(7.5)
+        .fontSize(SIZE.footer)
         .text(
           `${company}${contact ? ` · ${contact}` : ''} · Invoice ${data.reference}`,
           MARGIN,
@@ -504,12 +538,13 @@ export class InvoicePdfService {
         doc
           .fillColor(BRAND.slate)
           .font('brand-body')
-          .fontSize(8.5)
+          .fontSize(SIZE.small)
           .text('Thank you for travelling with us.', MARGIN, y + 20, {
             width: CONTENT_WIDTH,
             align: 'center',
           });
       }
+      doc.page.margins.bottom = bottomMargin;
     }
 
     doc.flushPages();

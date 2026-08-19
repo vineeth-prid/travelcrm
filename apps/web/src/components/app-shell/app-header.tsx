@@ -1,9 +1,10 @@
 'use client';
 
-import { Button, Header, SearchBox } from '@travel-crm/ui';
+import { Button, Header } from '@travel-crm/ui';
 import { Menu } from 'lucide-react';
 
 import { useUiStore } from '@/stores/ui-store';
+import { GlobalSearch } from './global-search';
 import { UserMenu } from './user-menu';
 
 export function AppHeader() {
@@ -24,13 +25,7 @@ export function AppHeader() {
       }
       trailing={<UserMenu />}
     >
-      {/* Nothing is searchable until the CRM module lands in Phase 2. */}
-      <SearchBox
-        className="max-w-sm"
-        placeholder="Search…"
-        disabled
-        title="Search becomes available with the CRM module"
-      />
+      <GlobalSearch />
     </Header>
   );
 }

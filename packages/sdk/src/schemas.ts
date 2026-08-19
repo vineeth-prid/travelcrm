@@ -373,6 +373,9 @@ export const proposalSchema = z
     travelEnd: optionalDate('Travel end'),
     adults: optionalCount(0, 'Adults'),
     children: optionalCount(0, 'Children'),
+    // Carried from the lead: a quote for two children aged 3 and 15 is not
+    // the same quote, so the document has to say which.
+    childAges: z.array(z.coerce.number().int().min(0).max(17)).max(12).optional(),
 
     executiveSummary: optionalText(4000),
     itinerary: optionalText(20000),
@@ -840,6 +843,14 @@ export const documentTemplateSchema = z.object({
     .int()
     .min(1, 'At least a day')
     .max(365, 'A year is the most this allows'),
+  /**
+   * Invoices only: what a new invoice starts at, in basis points. 500 is 5%,
+   * 1800 is 18%. Blank means no tax. Every invoice can still override it,
+   * because the rate depends on what is being sold.
+   */
+  taxRateBps: z
+    .preprocess(blankToNull, z.coerce.number().int().min(0).max(10_000).nullable())
+    .optional(),
 });
 
 export type DocumentTemplateRequest = z.infer<typeof documentTemplateSchema>;

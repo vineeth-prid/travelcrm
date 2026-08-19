@@ -59,6 +59,8 @@ export const proposalResponseSchema = z.object({
   submittedBy: userSummarySchema.nullable(),
   currentVersion: proposalVersionSchema,
   versionCount: z.number().int(),
+  isInvoiced: z.boolean(),
+  canAddFollowUp: z.boolean(),
   isExpired: z.boolean(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),

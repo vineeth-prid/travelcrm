@@ -38,6 +38,12 @@ import { formatTaxRate } from './invoice-labels';
 import { useCreateInvoice, useUpdateInvoice } from './use-invoices';
 
 const NO_TAX = '__none__';
+const CUSTOM_TAX = '__custom__';
+
+/** 1800 → "18", 750 → "7.5". What somebody types into the custom box. */
+function bpsToPercent(bps: number): string {
+  return String(bps / 100);
+}
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -281,37 +287,73 @@ export function InvoiceForm({ lead, proposal, invoice, onDone }: InvoiceFormProp
 
           <FormField
             id="taxRateBps"
-            label="Tax"
-            hint="Tax is not assumed. Leave as no tax where none applies."
+            label="GST"
+            hint="Defaults to the invoice template. Change it per invoice — the rate depends on what is being sold."
             error={errorFor('taxRateBps')}
           >
             <Controller
               control={control}
               name="taxRateBps"
-              render={({ field: control_ }) => (
-                <Select
-                  value={
-                    control_.value === null || control_.value === undefined
-                      ? NO_TAX
-                      : String(control_.value)
-                  }
-                  onValueChange={(next) => control_.onChange(next === NO_TAX ? null : Number(next))}
-                >
-                  <SelectTrigger id="taxRateBps">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {TAX_PRESETS.map((preset) => (
-                      <SelectItem
-                        key={preset.label}
-                        value={preset.bps === null ? NO_TAX : String(preset.bps)}
-                      >
-                        {preset.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
+              render={({ field: control_ }) => {
+                const value =
+                  control_.value === null || control_.value === undefined
+                    ? null
+                    : Number(control_.value);
+
+                // A rate that is not one of the presets is a custom one, and
+                // the box stays open showing it.
+                const isPreset =
+                  value === null || TAX_PRESETS.some((preset) => preset.bps === value);
+
+                return (
+                  <div className="flex flex-col gap-2">
+                    <Select
+                      value={value === null ? NO_TAX : isPreset ? String(value) : CUSTOM_TAX}
+                      onValueChange={(next) => {
+                        if (next === NO_TAX) control_.onChange(null);
+                        else if (next === CUSTOM_TAX) control_.onChange(value ?? 0);
+                        else control_.onChange(Number(next));
+                      }}
+                    >
+                      <SelectTrigger id="taxRateBps">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {TAX_PRESETS.map((preset) => (
+                          <SelectItem
+                            key={preset.label}
+                            value={preset.bps === null ? NO_TAX : String(preset.bps)}
+                          >
+                            {preset.label}
+                          </SelectItem>
+                        ))}
+                        <SelectItem value={CUSTOM_TAX}>Another rate…</SelectItem>
+                      </SelectContent>
+                    </Select>
+
+                    {value !== null && !isPreset ? (
+                      <div className="flex items-center gap-2">
+                        <Input
+                          aria-label="GST percentage"
+                          type="number"
+                          min={0}
+                          max={100}
+                          step={0.5}
+                          className="w-28"
+                          value={bpsToPercent(value)}
+                          onChange={(event) => {
+                            const percent = Number(event.target.value);
+                            control_.onChange(
+                              Number.isFinite(percent) ? Math.round(percent * 100) : 0,
+                            );
+                          }}
+                        />
+                        <span className="text-sm text-muted-foreground">%</span>
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              }}
             />
           </FormField>
 

@@ -23,5 +23,6 @@ export const documentTemplateResponseSchema = z.object({
   paymentTerms: z.string().nullable(),
   footerNote: z.string().nullable(),
   validityDays: z.number().int(),
+  taxRateBps: z.number().int().nullable(),
   updatedAt: z.string().datetime().nullable(),
 });

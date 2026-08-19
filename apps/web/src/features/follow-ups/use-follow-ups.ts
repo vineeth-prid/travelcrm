@@ -8,6 +8,7 @@ import {
   type UseQueryResult,
 } from '@tanstack/react-query';
 import type {
+  FollowUpCreateRequest,
   FollowUp,
   FollowUpCompleteRequest,
   FollowUpQuery,
@@ -65,5 +66,44 @@ export function useSaveFollowUpRule(): UseMutationResult<
   return useMutation({
     mutationFn: ({ id, input }) => api.followUps.saveRule(id, input),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.followUpRules }),
+  });
+}
+
+/**
+ * Raising a follow-up by hand.
+ *
+ * Everything that could be showing one is invalidated, not just the list the
+ * dialog was opened from: a follow-up recorded on an invoice belongs in the
+ * Follow-ups menu too, and it used to take a page refresh to get there.
+ * `refetchType: 'all'` is what does it — the default only refetches queries
+ * that are currently mounted, and the list you are heading for is not.
+ */
+export function useCreateFollowUp(): UseMutationResult<FollowUp, Error, FollowUpCreateRequest> {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: FollowUpCreateRequest) => api.followUps.create(input),
+    onSuccess: (followUp) => {
+      const refetch = { refetchType: 'all' as const };
+
+      void queryClient.invalidateQueries({ queryKey: queryKeys.followUpsAll, ...refetch });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.leadsAll, ...refetch });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.lead(followUp.leadId), ...refetch });
+
+      // The proposal and invoice pages both show whether another follow-up may
+      // be added, which this has just changed.
+      if (followUp.proposalId) {
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.proposal(followUp.proposalId),
+          ...refetch,
+        });
+      }
+      if (followUp.invoiceId) {
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.invoice(followUp.invoiceId),
+          ...refetch,
+        });
+      }
+    },
   });
 }

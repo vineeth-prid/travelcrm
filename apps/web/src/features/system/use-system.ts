@@ -10,7 +10,10 @@ export function useHealth(): UseQueryResult<HealthResponse> {
   return useQuery({
     queryKey: queryKeys.health,
     queryFn: ({ signal }) => api.system.health(signal),
-    refetchInterval: 30_000,
+    // Once a minute: this only answers "is the database up", and a poll per
+    // 30 seconds on every open tab is a request per tab per half-minute for
+    // an answer that almost never changes.
+    refetchInterval: 60_000,
   });
 }
 

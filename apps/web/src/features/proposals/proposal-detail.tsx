@@ -18,7 +18,7 @@ import {
   SelectValue,
   toast,
 } from '@travel-crm/ui';
-import { CalendarPlus, Download, FileText, Lock, Pencil, Send } from 'lucide-react';
+import { CalendarPlus, Download, FileText, Lock, Pencil, Receipt, Send } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 
@@ -125,10 +125,32 @@ function Loaded({ proposal, versions }: { proposal: Proposal; versions: Proposal
       description={`${proposal.reference} · ${proposal.customerName} · version ${current.version} of ${proposal.versionCount}`}
       actions={
         <>
-          <Button variant="secondary" onClick={() => setScheduling(true)}>
+          {/*
+           * Disabled until the schedule has run its course: adding to it
+           * halfway through means two people chasing the same customer on
+           * overlapping days. The API refuses it either way.
+           */}
+          <Button
+            variant="secondary"
+            disabled={!proposal.canAddFollowUp}
+            title={
+              proposal.canAddFollowUp
+                ? undefined
+                : 'Available once the last scheduled follow-up is due'
+            }
+            onClick={() => setScheduling(true)}
+          >
             <CalendarPlus aria-hidden />
             Record follow-up
           </Button>
+          {proposal.status === 'ACCEPTED' && !proposal.isInvoiced ? (
+            <Button asChild variant="secondary">
+              <Link href={`/leads/${proposal.leadId}?tab=invoices&proposal=${proposal.id}`}>
+                <Receipt aria-hidden />
+                Raise invoice
+              </Link>
+            </Button>
+          ) : null}
           <Button variant="secondary" onClick={() => setEditing(true)}>
             <Pencil aria-hidden />
             {locked ? 'Revise' : 'Edit'}

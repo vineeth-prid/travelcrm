@@ -1,12 +1,12 @@
 'use client';
 
-import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { followUpCreateSchema } from '@travel-crm/sdk';
 import { Button, FormField, Input, Modal, Textarea, toast } from '@travel-crm/ui';
 import { useState } from 'react';
 
-import { api } from '@/lib/api';
-import { queryKeys } from '@/lib/query-keys';
+import { ApiError } from '@travel-crm/sdk';
+
+import { useCreateFollowUp } from './use-follow-ups';
 
 interface ScheduleDialogProps {
   open: boolean;
@@ -32,12 +32,11 @@ function tomorrow(): string {
  * paid, or a date the customer asked you to call back on.
  */
 export function ScheduleDialog({ open, onClose, subject, subjectLabel }: ScheduleDialogProps) {
-  const queryClient = useQueryClient();
   const [dueAt, setDueAt] = useState(tomorrow());
   const [reason, setReason] = useState('');
   const [error, setError] = useState('');
 
-  const create = useMutation({ mutationFn: api.followUps.create });
+  const create = useCreateFollowUp();
 
   const submit = async () => {
     const parsed = followUpCreateSchema.safeParse({ ...subject, dueAt, reason });
@@ -51,15 +50,17 @@ export function ScheduleDialog({ open, onClose, subject, subjectLabel }: Schedul
       await create.mutateAsync(parsed.data);
       toast.success('Follow-up added');
 
-      void queryClient.invalidateQueries({ queryKey: queryKeys.followUpsAll });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.leadsAll });
-
       setReason('');
       setDueAt(tomorrow());
       setError('');
       onClose();
-    } catch {
-      toast.error('That follow-up could not be saved.');
+    } catch (cause) {
+      // The API refuses one while a schedule is still running; say why rather
+      // than "could not be saved".
+      const message =
+        cause instanceof ApiError ? cause.message : 'That follow-up could not be saved.';
+      setError(message);
+      toast.error(message);
     }
   };
 

@@ -224,3 +224,44 @@ export function smtpTest(companyName: string): RenderedEmail {
     }),
   };
 }
+
+export interface ProposalSentData {
+  companyName: string;
+  customerName: string;
+  consultantName: string;
+  destination: string | null;
+  travelDates: string;
+  travellers: string;
+  proposalReference: string;
+  proposalValue: string;
+  validUntil: string;
+  /** Time-limited link to the PDF. Null when it could not be produced. */
+  pdfUrl: string | null;
+}
+
+/**
+ * The proposal itself, to the customer.
+ *
+ * The only template addressed to somebody outside the business, which is why
+ * it names the consultant and carries no internal reference beyond the
+ * proposal number the customer will quote back.
+ */
+export function proposalSent(data: ProposalSentData): RenderedEmail {
+  return {
+    subject: `Your travel proposal — ${data.destination ?? data.proposalReference}`,
+    body: frame({
+      companyName: data.companyName,
+      heading: `Your proposal is ready, ${data.customerName}`,
+      intro: `Thank you for your enquiry. ${data.consultantName} has put together the trip below — the full itinerary is attached as a PDF. Do reply with any changes you would like.`,
+      rows: [
+        ['Destination', data.destination ?? '—'],
+        ['Travel dates', data.travelDates],
+        ['Travellers', data.travellers],
+        ['Proposal', data.proposalReference],
+        ['Price', data.proposalValue],
+        ['Valid until', data.validUntil],
+      ],
+      action: data.pdfUrl ? { label: 'View the proposal', url: data.pdfUrl } : undefined,
+    }),
+  };
+}

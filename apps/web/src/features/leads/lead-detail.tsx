@@ -21,6 +21,7 @@ import {
 } from '@travel-crm/ui';
 import { CalendarPlus, Mail, MessageCircle, Pencil, Phone, Users } from 'lucide-react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useState, type ReactNode } from 'react';
 
 import { useSession } from '@/features/auth/session-context';
@@ -80,7 +81,15 @@ export function LeadDetail({ leadId }: { leadId: string }) {
 }
 
 function LoadedLead({ lead }: { lead: Lead }) {
-  const [tab, setTab] = useState<TabId>('requirements');
+  // Deep-linkable: "Raise invoice" on a proposal arrives here with the tab
+  // and the proposal to bill already chosen.
+  const params = useSearchParams();
+  const requestedTab = params.get('tab');
+  const billFromProposal = params.get('proposal');
+
+  const [tab, setTab] = useState<TabId>(
+    TABS.some((item) => item.id === requestedTab) ? (requestedTab as TabId) : 'requirements',
+  );
   const [scheduling, setScheduling] = useState(false);
   const user = useSession();
   const staff = useStaff();
@@ -235,7 +244,7 @@ function LoadedLead({ lead }: { lead: Lead }) {
               <CardTitle>Invoices & payments</CardTitle>
             </CardHeader>
             <CardContent>
-              <InvoicesSection lead={lead} />
+              <InvoicesSection lead={lead} billFromProposalId={billFromProposal} />
             </CardContent>
           </Card>
 

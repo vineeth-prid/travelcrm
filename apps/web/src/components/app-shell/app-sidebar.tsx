@@ -48,7 +48,10 @@ export function AppSidebar({ onNavigate, showBrand = true }: AppSidebarProps) {
           <Link
             href="/dashboard"
             onClick={onNavigate}
-            className="flex items-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            // Centred over the navigation rather than tucked into the corner,
+            // and half again as large: at h-9 in the top-left it read as a
+            // favicon rather than the company's mark.
+            className="flex items-center justify-center rounded-md py-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <Image
               src="/brand/tour-de-india-logo-transparent.png"
@@ -56,7 +59,7 @@ export function AppSidebar({ onNavigate, showBrand = true }: AppSidebarProps) {
               width={640}
               height={414}
               priority
-              className="h-9 w-auto"
+              className="h-14 w-auto"
             />
           </Link>
         ) : null

@@ -529,6 +529,24 @@ async function main(): Promise<void> {
     .set('Cookie', admin)
     .expect(404);
 
+  // --- the customer is actually sent it -------------------------------------
+  //
+  // Submitting used to record the fact and send nothing. People press Submit
+  // and expect the customer to receive the proposal, so it does both now.
+  {
+    const sent = prisma.notifications.filter((row) => row.type === 'PROPOSAL_SENT');
+    assert.ok(sent.length >= 1, 'submitting emails the proposal to the customer');
+
+    for (const email of sent) {
+      assert.equal(email.recipientEmail, 'priya@example.com', 'it goes to the customer');
+      assert.match(email.subject, /proposal/i);
+      assert.ok(
+        !email.body.includes('120000') && !email.body.includes('1,20,000'),
+        'and carries no cost or margin — this one leaves the building',
+      );
+    }
+  }
+
   // --- the list across every lead -------------------------------------------
   const all = await request(http).get(`${base}/proposals`).set('Cookie', admin).expect(200);
   assert.ok((all.body as unknown[]).length >= 2, 'every proposal, not just one lead’s');

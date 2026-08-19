@@ -402,6 +402,8 @@ export interface ProposalVersion {
   travelEnd: string | null;
   adults: number | null;
   children: number | null;
+  /** One entry per child, in years, carried from the lead. */
+  childAges: number[];
   executiveSummary: string | null;
   itinerary: string | null;
   inclusions: string | null;
@@ -439,6 +441,17 @@ export interface Proposal {
   /** The highest-numbered version. There is no other "active" marker. */
   currentVersion: ProposalVersion;
   versionCount: number;
+  /**
+   * True when this proposal has an invoice that has not been cancelled. The
+   * "Raise invoice" action reads it, so a consultant is not offered an action
+   * the API will refuse.
+   */
+  isInvoiced: boolean;
+  /**
+   * True when the scheduled follow-ups have run their course and a consultant
+   * may add their own. See FollowUpsService.canAddManual.
+   */
+  canAddFollowUp: boolean;
   /** Derived from the current version's validity, not stored. */
   isExpired: boolean;
   createdAt: string;
@@ -934,6 +947,8 @@ export interface DocumentTemplate {
   footerNote: string | null;
   /** Proposal: how long a quote stays valid. Invoice: days until due. */
   validityDays: number;
+  /** Invoices only. Basis points: 500 is 5%, 1800 is 18%. Null means no tax. */
+  taxRateBps: number | null;
   updatedAt: string | null;
 }
 
@@ -965,7 +980,7 @@ export interface SmtpStatus {
 }
 
 export type NotificationType =
-  'FOLLOW_UP_DUE' | 'FOLLOW_UP_MISSED' | 'FOLLOW_UP_ESCALATED' | 'LEAD_ASSIGNED';
+  'FOLLOW_UP_DUE' | 'FOLLOW_UP_MISSED' | 'FOLLOW_UP_ESCALATED' | 'PROPOSAL_SENT' | 'LEAD_ASSIGNED';
 
 export type NotificationStatus = 'PENDING' | 'SENT' | 'FAILED';
 

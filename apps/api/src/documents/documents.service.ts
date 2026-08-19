@@ -94,6 +94,7 @@ export class DocumentsService {
         paymentTerms: record.paymentTerms,
         footerNote: record.footerNote,
         validityDays: record.validityDays,
+        taxRateBps: record.taxRateBps,
         updatedAt: record.updatedAt.toISOString(),
       };
     }
@@ -109,6 +110,8 @@ export class DocumentsService {
       // A fortnight either way: long enough to decide, short enough that a
       // price does not outlive the season it was quoted for.
       validityDays: kind === 'INVOICE' ? this.config.get('INVOICE_DUE_DAYS', { infer: true }) : 14,
+      taxRateBps:
+        kind === 'INVOICE' ? this.config.get('INVOICE_DEFAULT_TAX_BPS', { infer: true }) : null,
       updatedAt: null,
     };
   }
@@ -124,6 +127,7 @@ export class DocumentsService {
       paymentTerms: input.paymentTerms ?? null,
       footerNote: input.footerNote ?? null,
       validityDays: input.validityDays,
+      taxRateBps: input.taxRateBps ?? null,
     };
 
     await this.prisma.documentTemplate.upsert({

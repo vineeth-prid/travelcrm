@@ -62,6 +62,7 @@ function fromLead(lead: Lead, template?: DocumentTemplate): ProposalInput {
     travelEnd: lead.travelEnd ?? '',
     adults: lead.adults === null ? '' : String(lead.adults),
     children: lead.children === null ? '' : String(lead.children),
+    childAges: lead.childAges,
     executiveSummary: lead.requirementSummary ?? '',
     itinerary: '',
     inclusions: template?.inclusions ?? '',
@@ -86,6 +87,7 @@ function fromProposal(proposal: Proposal): ProposalInput {
     travelEnd: version.travelEnd ?? '',
     adults: version.adults === null ? '' : String(version.adults),
     children: version.children === null ? '' : String(version.children),
+    childAges: version.childAges,
     executiveSummary: version.executiveSummary ?? '',
     itinerary: version.itinerary ?? '',
     inclusions: version.inclusions ?? '',
@@ -129,6 +131,7 @@ export function ProposalForm({ lead, proposal, asNewVersion, onDone }: ProposalF
     queryKey: queryKeys.template('PROPOSAL'),
     queryFn: ({ signal }) => api.documents.template('PROPOSAL', signal),
     enabled: proposal === null,
+    staleTime: 10 * 60_000,
   });
 
   const {
@@ -229,6 +232,39 @@ export function ProposalForm({ lead, proposal, asNewVersion, onDone }: ProposalF
             <FormField id="children" label="Children" error={errorFor('children')}>
               <Input {...field('children')} {...register('children')} type="number" min={0} />
             </FormField>
+
+            {/*
+             * Prefilled from the lead. A quote for two children aged 3 and 15
+             * is not the same quote, and the ages were being asked for on the
+             * enquiry and then dropped before the document.
+             */}
+            <Controller
+              control={control}
+              name="childAges"
+              render={({ field: ages }) => (
+                <FormField
+                  id="childAges"
+                  label="Child ages"
+                  hint="Comma separated, in years."
+                  error={errorFor('childAges')}
+                >
+                  <Input
+                    id="childAges"
+                    inputMode="numeric"
+                    value={Array.isArray(ages.value) ? ages.value.join(', ') : ''}
+                    onChange={(event) =>
+                      ages.onChange(
+                        event.target.value
+                          .split(/[,s]+/)
+                          .filter(Boolean)
+                          .map((age) => Number.parseInt(age, 10))
+                          .filter((age) => Number.isFinite(age)),
+                      )
+                    }
+                  />
+                </FormField>
+              )}
+            />
           </div>
 
           <FormField id="validUntil" label="Valid until" required error={errorFor('validUntil')}>

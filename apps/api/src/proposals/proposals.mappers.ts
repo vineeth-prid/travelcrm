@@ -10,6 +10,25 @@ import { toDateOnly } from '../leads/leads.mappers';
 import { toUserSummary, userSummarySelect, type UserSummaryRecord } from '../users/users.service';
 
 /** What every proposal query selects. Kept in one place so shapes cannot drift. */
+/**
+ * Whether a consultant may add their own follow-up to this proposal yet.
+ *
+ * The schedules chase on their own days; adding to them halfway through means
+ * two people chasing the same customer on overlapping dates. Once the last
+ * scheduled one is due — or the schedule is finished — the consultant takes
+ * over and can set their own dates.
+ */
+function canAddFollowUp(record: { followUps?: { status: string; dueAt: Date }[] }): boolean {
+  const scheduled = record.followUps ?? [];
+  const now = Date.now();
+
+  return !scheduled.some(
+    (followUp) =>
+      (followUp.status === 'PENDING' || followUp.status === 'DUE') &&
+      followUp.dueAt.getTime() > now,
+  );
+}
+
 export const proposalInclude = {
   lead: { include: { customer: true } },
   createdBy: { select: userSummarySelect },
@@ -18,6 +37,9 @@ export const proposalInclude = {
     include: { createdBy: { select: userSummarySelect } },
     orderBy: { version: 'desc' },
   },
+  // Just enough to answer "can this be billed?" and "can a follow-up be added?"
+  invoices: { select: { id: true, status: true } },
+  followUps: { select: { status: true, dueAt: true, sequence: true } },
 } as const;
 
 export type ProposalVersionWithAuthor = ProposalVersionRecord & {
@@ -29,6 +51,8 @@ export type ProposalWithRelations = ProposalRecord & {
   createdBy: UserSummaryRecord | null;
   submittedBy: UserSummaryRecord | null;
   versions: ProposalVersionWithAuthor[];
+  invoices: { id: string; status: string }[];
+  followUps: { status: string; dueAt: Date; sequence: number }[];
 };
 
 /**
@@ -69,6 +93,7 @@ export function toProposalVersion(
     travelEnd: toDateOnly(record.travelEnd),
     adults: record.adults,
     children: record.children,
+    childAges: record.childAges,
     executiveSummary: record.executiveSummary,
     itinerary: record.itinerary,
     inclusions: record.inclusions,
@@ -125,6 +150,8 @@ export function toProposal(record: ProposalWithRelations, withFinancials: boolea
     submittedBy: record.submittedBy ? toUserSummary(record.submittedBy) : null,
     currentVersion: toProposalVersion(current, withFinancials),
     versionCount: record.versions.length,
+    isInvoiced: (record.invoices ?? []).some((invoice) => invoice.status !== 'CANCELLED'),
+    canAddFollowUp: canAddFollowUp(record),
     // Derived rather than stored, so it is right the moment validity lapses
     // instead of whenever a job next runs. A decided proposal never expires.
     isExpired: !settled && current.validUntil.getTime() < Date.now(),

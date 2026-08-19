@@ -42,6 +42,7 @@ export interface CustomerProposalPdfData {
   travelEnd: Date | null;
   adults: number | null;
   children: number | null;
+  childAges: number[];
 
   executiveSummary: string | null;
   itinerary: string | null;
@@ -81,10 +82,19 @@ function duration(start: Date | null, end: Date | null): string | null {
   return `${nights} ${nights === 1 ? 'Night' : 'Nights'} / ${nights + 1} Days`;
 }
 
-function travellers(adults: number | null, children: number | null): string | null {
+function travellers(
+  adults: number | null,
+  children: number | null,
+  childAges: number[] = [],
+): string | null {
   const parts: string[] = [];
   if (adults) parts.push(`${adults} ${adults === 1 ? 'Adult' : 'Adults'}`);
-  if (children) parts.push(`${children} ${children === 1 ? 'Child' : 'Children'}`);
+  if (children) {
+    // The ages matter to what is being quoted — a 3-year-old and a 15-year-old
+    // are not the same booking — so they go on the document, not just the lead.
+    const ages = childAges.length > 0 ? ` (aged ${childAges.join(', ')})` : '';
+    parts.push(`${children} ${children === 1 ? 'Child' : 'Children'}${ages}`);
+  }
   return parts.length > 0 ? parts.join(' + ') : null;
 }
 
@@ -212,7 +222,7 @@ export class ProposalPdfService {
           ? `${longDate(data.travelStart)}${data.travelEnd ? ` — ${longDate(data.travelEnd)}` : ''}`
           : 'To be confirmed',
       ],
-      ['Travellers', travellers(data.adults, data.children) ?? 'To be confirmed'],
+      ['Travellers', travellers(data.adults, data.children, data.childAges) ?? 'To be confirmed'],
     ];
 
     const columnWidth = CONTENT_WIDTH / 2;
@@ -417,6 +427,12 @@ export class ProposalPdfService {
     for (let index = 0; index < range.count; index += 1) {
       doc.switchToPage(range.start + index);
 
+      // The footer sits below the bottom margin by design. Without this,
+      // pdfkit treats writing there as running out of room and helpfully
+      // starts a new page — which is where a blank last page comes from.
+      const bottomMargin = doc.page.margins.bottom;
+      doc.page.margins.bottom = 0;
+
       const y = PAGE_HEIGHT - MARGIN - 22;
       doc
         .strokeColor(RULE)
@@ -437,6 +453,8 @@ export class ProposalPdfService {
         width: 140,
         align: 'right',
       });
+      doc.page.margins.bottom = bottomMargin;
+      doc.page.margins.bottom = bottomMargin;
     }
 
     // Leaving the buffer on a switched-to page confuses pdfkit's flush.

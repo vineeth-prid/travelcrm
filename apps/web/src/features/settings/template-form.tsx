@@ -60,6 +60,8 @@ export function TemplateForm({ kind }: { kind: TemplateKind }) {
   const template = useQuery({
     queryKey: queryKeys.template(kind),
     queryFn: ({ signal }) => api.documents.template(kind, signal),
+    // Boilerplate somebody edits a few times a year.
+    staleTime: 10 * 60_000,
   });
 
   const {
@@ -77,6 +79,8 @@ export function TemplateForm({ kind }: { kind: TemplateKind }) {
           paymentTerms: template.data.paymentTerms ?? '',
           footerNote: template.data.footerNote ?? '',
           validityDays: template.data.validityDays,
+          // Basis points on the wire, percent in the box: 1800 shows as 18.
+          taxRateBps: template.data.taxRateBps === null ? '' : template.data.taxRateBps / 100,
         }
       : undefined,
   });
@@ -187,6 +191,27 @@ export function TemplateForm({ kind }: { kind: TemplateKind }) {
               >
                 <Input id="template-footer" {...register('footerNote')} />
               </FormField>
+
+              {kind === 'INVOICE' ? (
+                <FormField
+                  id="template-tax"
+                  label="Default GST (%)"
+                  hint="What a new invoice starts at. Blank means no tax, and every invoice can override it."
+                  error={errorFor('taxRateBps')}
+                >
+                  <Input
+                    id="template-tax"
+                    type="number"
+                    min={0}
+                    max={100}
+                    step={0.5}
+                    {...register('taxRateBps', {
+                      setValueAs: (value: string) =>
+                        value === '' ? null : Math.round(Number(value) * 100),
+                    })}
+                  />
+                </FormField>
+              ) : null}
             </div>
 
             <div className="flex justify-end">

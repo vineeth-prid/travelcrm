@@ -23,17 +23,27 @@ import {
 } from './use-invoices';
 
 /** Invoices raised against one lead, on its detail page. */
-export function InvoicesSection({ lead }: { lead: Lead }) {
+export function InvoicesSection({
+  lead,
+  billFromProposalId = null,
+}: {
+  lead: Lead;
+  /** Set when the consultant arrived from a proposal's "Raise invoice". */
+  billFromProposalId?: string | null;
+}) {
   const invoices = useInvoices({ leadId: lead.id });
   const proposals = useLeadProposals(lead.id);
   const [editing, setEditing] = useState<Invoice | null>(null);
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useState(billFromProposalId !== null);
 
-  // Billing from the accepted proposal is the normal path; the most recent one
-  // is the fallback so the form is never empty when a proposal exists.
+  // The proposal named in the URL wins; otherwise the accepted one, which is
+  // the normal path; otherwise the most recent, so the form is never empty
+  // when a proposal exists. A proposal already billed is not offered again.
+  const billable = (proposals.data ?? []).filter((proposal) => !proposal.isInvoiced);
   const acceptedProposal =
-    proposals.data?.find((proposal) => proposal.status === 'ACCEPTED') ??
-    proposals.data?.[0] ??
+    billable.find((proposal) => proposal.id === billFromProposalId) ??
+    billable.find((proposal) => proposal.status === 'ACCEPTED') ??
+    billable[0] ??
     null;
 
   if (creating || editing) {

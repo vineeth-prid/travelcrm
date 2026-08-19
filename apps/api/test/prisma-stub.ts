@@ -2046,6 +2046,10 @@ export function createPrismaStub() {
         : null,
       createdBy: users.find((item) => item.id === row.createdById) ?? null,
       submittedBy: users.find((item) => item.id === row.submittedById) ?? null,
+      // What the service reads to answer "has this been billed?" and
+      // "may a follow-up be added?".
+      invoices: invoices.filter((item) => item.proposalId === row.id),
+      followUps: followUps.filter((item) => item.proposalId === row.id),
       // Newest first, matching the `orderBy: { version: 'desc' }` in the include.
       versions: proposalVersions
         .filter((item) => item.proposalId === row.id)

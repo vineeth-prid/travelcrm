@@ -23,6 +23,8 @@ import {
 /** Outcomes that mean there is no point chasing this proposal any further. */
 const CLOSING_OUTCOMES = ['READY_TO_BOOK', 'NOT_INTERESTED'] as const;
 
+const DAY_MS = 86_400_000;
+
 @Injectable()
 export class FollowUpsService {
   private readonly logger = new Logger(FollowUpsService.name);
@@ -215,14 +217,31 @@ export class FollowUpsService {
 
     const dueAt = new Date(`${input.dueAt}T09:00:00.000Z`);
 
+    // A proposal is chased on a schedule. Adding to it before that schedule
+    // has run its course would mean two people chasing the same customer on
+    // overlapping days, so it is refused until the last one is reached.
+    if (proposalId) {
+      const remaining = await this.remainingScheduled(proposalId);
+      if (remaining > 0) {
+        throw new BadRequestException(
+          remaining === 1
+            ? 'The last scheduled follow-up on this proposal is not due yet.'
+            : `There are ${remaining} scheduled follow-ups still to come on this proposal.`,
+        );
+      }
+    }
+
+    // Continues the numbering rather than starting again: to the consultant
+    // reading the list, this is the next chase, not a different kind of thing.
+    const sequence = (await this.lastSequence({ leadId, proposalId, invoiceId })) + 1;
+
     const record = await this.prisma.followUp.create({
       data: {
         kind,
         leadId,
         proposalId,
         invoiceId,
-        // Zero says "nobody scheduled this" — the schedules number from 1.
-        sequence: 0,
+        sequence,
         dueAt,
         reason: input.reason,
         assignedToId: input.assignedToId ?? lead.assignedToId ?? actor.id,
@@ -237,13 +256,116 @@ export class FollowUpsService {
       actorId: actor.id,
     });
 
-    // The lead list's "next follow-up" column reads this, so a hand-raised
-    // follow-up has to move it or the pipeline looks quiet.
-    if (!lead.nextFollowUpAt || dueAt < lead.nextFollowUpAt) {
-      await this.leads.setNextFollowUp(leadId, dueAt);
-    }
+    await this.shiftPending(leadId, record.id, dueAt);
+    await this.refreshNextFollowUp(leadId);
 
     return toFollowUp(record);
+  }
+
+  /**
+   * Scheduled follow-ups on a proposal that are still to come.
+   *
+   * Zero means the schedule has run out — every one of them is done, missed,
+   * cancelled, or is the last one and already due. That is the point at which
+   * a consultant may add their own.
+   */
+  private async remainingScheduled(proposalId: string): Promise<number> {
+    return this.prisma.followUp.count({
+      where: {
+        proposalId,
+        // Sequence 0 is legacy hand-raised work; only the schedule counts.
+        sequence: { gt: 0 },
+        status: { in: ['PENDING', 'DUE'] },
+        dueAt: { gt: new Date() },
+      },
+    });
+  }
+
+  /** The highest number used so far, so the next one carries on from it. */
+  private async lastSequence(subject: {
+    leadId: string;
+    proposalId: string | null;
+    invoiceId: string | null;
+  }): Promise<number> {
+    const last = await this.prisma.followUp.findFirst({
+      where: subject.proposalId
+        ? { proposalId: subject.proposalId }
+        : subject.invoiceId
+          ? { invoiceId: subject.invoiceId }
+          : { leadId: subject.leadId, kind: 'LEAD' },
+      orderBy: { sequence: 'desc' },
+      select: { sequence: true },
+    });
+
+    return last?.sequence ?? 0;
+  }
+
+  /**
+   * Moves what is still to come by however far the new date sits from it.
+   *
+   * A consultant who speaks to the customer on day 2 and sets the next call
+   * for day 4 does not also want the day-3 and day-5 chases firing on the old
+   * dates. Shifting by the difference keeps the gaps the schedule was written
+   * with — 1, 3, 5 stays 1, 3, 5, measured from what actually happened.
+   */
+  private async shiftPending(leadId: string, exceptId: string, dueAt: Date): Promise<void> {
+    const next = await this.prisma.followUp.findFirst({
+      where: {
+        leadId,
+        id: { not: exceptId },
+        status: { in: ['PENDING', 'DUE'] },
+        dueAt: { gt: new Date() },
+      },
+      orderBy: { dueAt: 'asc' },
+      select: { id: true, dueAt: true },
+    });
+
+    if (!next) return;
+
+    const days = Math.round((dueAt.getTime() - next.dueAt.getTime()) / DAY_MS);
+
+    if (days === 0) return;
+
+    const pending = await this.prisma.followUp.findMany({
+      where: {
+        leadId,
+        id: { not: exceptId },
+        status: { in: ['PENDING', 'DUE'] },
+        dueAt: { gte: next.dueAt },
+      },
+      select: { id: true, dueAt: true },
+    });
+
+    for (const followUp of pending) {
+      await this.prisma.followUp.update({
+        where: { id: followUp.id },
+        data: { dueAt: addDays(followUp.dueAt, days) },
+      });
+    }
+
+    this.logger.log(
+      `Shifted ${pending.length} follow-ups on lead ${leadId} by ${days} day(s) to keep the schedule's gaps.`,
+    );
+  }
+
+  /** Keeps the lead's own "next follow-up" column honest after any change. */
+  private async refreshNextFollowUp(leadId: string): Promise<void> {
+    const next = await this.prisma.followUp.findFirst({
+      where: { leadId, status: { in: ['PENDING', 'DUE'] } },
+      orderBy: { dueAt: 'asc' },
+      select: { dueAt: true },
+    });
+
+    await this.leads.setNextFollowUp(leadId, next?.dueAt ?? null);
+  }
+
+  /**
+   * Whether a consultant may add their own follow-up to this proposal yet.
+   * The interface asks so it can disable the button rather than let somebody
+   * fill in a form that will be refused.
+   */
+  async canAddManual(proposalId: string): Promise<boolean> {
+    return (await this.remainingScheduled(proposalId)) === 0;
   }
 
   /** Works out what a hand-raised follow-up is about, and which lead it belongs to. */

@@ -38,6 +38,7 @@ export function CompanyForm() {
   const profile = useQuery({
     queryKey: queryKeys.company,
     queryFn: ({ signal }) => api.documents.company(signal),
+    staleTime: 10 * 60_000,
   });
 
   const {
